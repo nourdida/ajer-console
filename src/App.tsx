@@ -522,7 +522,7 @@ export function App() {
     return <FileCard lang="ar" dir="rtl">
         <div className="ajer-app">
         {ready && !profile ? <>
-            <Header title="أجر كونسول" fact="نسخة تجريبية 0.3" intro="قبل ما تبدأ، عرفنا بنفسك: بياناتك بتفضل على جهازك بس في التجربة دي." />
+            <Header title="أجر كونسول" fact="نسخة تجريبية 0.4" intro="قبل ما تبدأ، عرفنا بنفسك: بياناتك بتفضل على جهازك بس في التجربة دي." />
             <Group label="بياناتك" heading="معلوماتك الأساسية">
                 <ProfileForm initial={null} submitLabel="احفظ وابدأ" onSave={(p) => setProfile(p)} />
             </Group>
@@ -530,7 +530,7 @@ export function App() {
         <div className="ajer-topbar">
             <button type="button" className="ajer-menu-btn" aria-label="افتح القائمة" onClick={() => setMenuOpen(true)}>⋮</button>
         </div>
-        <Header title="أجر كونسول" fact="نسخة تجريبية 0.3" intro="وسيط بين اللي عنده بلايستيشن واللي عايز يلعب: اختار أقرب جهاز أو دراع أو لعبة، كلم صاحبها، وادفع كاش عند الاستلام." />
+        <Header title="أجر كونسول" fact="نسخة تجريبية 0.4" intro="وسيط بين اللي عنده بلايستيشن واللي عايز يلعب: اختار أقرب جهاز أو دراع أو لعبة، كلم صاحبها، وادفع كاش عند الاستلام." />
         <Callout title="دي نسخة تجريبية" tone="warning">كل الأجهزة والأسعار والتقييمات هنا بيانات وهمية للتوضيح، ومفيش حجز أو دفع حقيقي بيحصل من الصفحة دي.</Callout>
         <Drawer open={menuOpen} profile={profile} myCount={myListings.length} onClose={() => setMenuOpen(false)} />
         <Routes>
@@ -551,7 +551,7 @@ export function App() {
         </div>}
         {(() => { const msgs = [...new Set([listingsSaved.message, requestsSaved.message, profileSaved.message, rentalSaved.message].filter(Boolean))]; return ready && msgs.length ? <Caption>{msgs.join(' ')}</Caption> : null; })()}
         <Caption>صور الأجهزة: بلايستيشن 5 بواسطة Soberian وبلايستيشن 4 بواسطة Evan-Amos والدراع بواسطة Viper polo، عبر ويكيميديا كومنز. أغلفة الألعاب رسوم توضيحية.</Caption>
-        <Closing>نسخة تجريبية 0.3 اتعملت 26 نوفمبر 2026. مفيش طلبات حقيقية اتبعتت.</Closing>
+        <Closing>نسخة تجريبية 0.4. اتعملت 26 نوفمبر 2026. مفيش طلبات حقيقية اتبعتت.</Closing>
         </>}
         </div>
     </FileCard>;
