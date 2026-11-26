@@ -8,6 +8,70 @@ import React, {
   useState,
 } from 'react';
 import './design.css';
+import theme from '../theme.js';
+
+/* ---------------- Theme (theme.js at the repo root, edited by the owner) ---------------- */
+
+function hexToRgba(hex: string, alpha: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+(function applyTheme() {
+  const t: any = theme || {};
+  const root = document.documentElement;
+  if (t.اللون_الأساسي) root.style.setProperty('--ds-teal', t.اللون_الأساسي);
+  if (t.لون_الخلفية) root.style.setProperty('--ds-page', t.لون_الخلفية);
+  if (t.لون_الكتابة) root.style.setProperty('--ds-ink', t.لون_الكتابة);
+
+  const extra: string[] = [];
+  const accent: string | undefined = t.اللون_الأساسي;
+  if (accent && /^#?[0-9a-f]{6}$/i.test(accent.trim())) {
+    const a = accent;
+    const g = (x: number) => hexToRgba(a, x);
+    extra.push(`.ajer-app h1{text-shadow:0 0 18px ${g(0.45)},0 0 46px ${g(0.3)}}`);
+    extra.push(`.ajer-num{border-color:${g(0.5)};color:${a};box-shadow:0 0 10px ${g(0.25)}}`);
+    extra.push(`.ajer-menu-btn{color:${a};box-shadow:0 0 12px ${g(0.25)}}`);
+    extra.push(`.ajer-menu-btn:focus-visible{outline-color:${a}}`);
+    extra.push(`.ajer-badge{border-color:${g(0.55)};color:${a};background:${g(0.1)};box-shadow:0 0 12px ${g(0.25)}}`);
+    extra.push(`.ajer-progress>div{background:linear-gradient(90deg,#8b5cff,${a});box-shadow:0 0 12px ${g(0.5)}}`);
+    extra.push(`.ajer-ring{filter:drop-shadow(0 0 12px ${g(0.35)})}`);
+    extra.push(`.ajer-ring-label{color:${a};text-shadow:0 0 14px ${g(0.6)}}`);
+    extra.push(`.ajer-check input{accent-color:${a}}`);
+    extra.push(`.ajer-bubble-me{background:${g(0.12)};border-color:${g(0.45)}}`);
+    extra.push(`.ajer-chat-input:focus{outline-color:${g(0.5)}}`);
+    extra.push(`.ajer-drawer-link[aria-current="page"]{color:${a};background:${g(0.08)};text-shadow:0 0 12px ${g(0.5)}}`);
+    extra.push(`.ajer-drawer-link:focus-visible{outline-color:${a}}`);
+    extra.push(`.file-nav a[aria-current="page"]{color:${a};box-shadow:inset 0 -2px 0 ${a};text-shadow:0 0 14px ${g(0.6)}}`);
+    extra.push(`.ajer-card-actions button[data-variant="primary"],.ajer-app>button[data-variant="primary"],.ajer-sheet button[data-variant="primary"]{box-shadow:0 0 16px ${g(0.35)}}`);
+  }
+  if (t.شكل_الأزرار === 'مربع') {
+    extra.push('.file-button,.file-button.is-pill{border-radius:10px}');
+  }
+  if (t.حجم_الخط === 'كبير') {
+    extra.push('body{font-size:18px}');
+  }
+  const fonts: Record<string, { href: string; family: string }> = {
+    'كايرو': { href: 'https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap', family: "'Cairo',sans-serif" },
+    'تجوال': { href: 'https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap', family: "'Tajawal',sans-serif" },
+  };
+  const f = fonts[t.الخط];
+  if (f) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = f.href;
+    document.head.appendChild(link);
+    extra.push(`:root{--ds-font-text:${f.family};--ds-font-display:${f.family}}`);
+    extra.push(`body,.file-card{font-family:${f.family}}`);
+  }
+  if (extra.length) {
+    const style = document.createElement('style');
+    style.textContent = extra.join('\n');
+    document.head.appendChild(style);
+  }
+})();
 
 /* ---------------- Router (hash-based, works on static hosting) ---------------- */
 
