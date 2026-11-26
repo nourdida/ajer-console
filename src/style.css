@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Bitcount+Grid+Single&display=swap');
+.file-title { font-family: 'Bitcount Grid Single', sans-serif; letter-spacing: 0.08em; }
 html, body, #root { margin: 0; min-height: 100%; }
 body { background: var(--ds-page); }
 
