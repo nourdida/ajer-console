@@ -19,5 +19,5 @@ export default {
   حجم_الخط: 'عادي',
 
   // الخط: اكتب النظام أو كايرو أو تجوال
-  الخط: 'Bitcount Grid Single',
+  الخط: 'system',
 };
