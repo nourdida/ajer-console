@@ -592,7 +592,7 @@ export function App() {
     return <FileCard lang="ar" dir="rtl">
         <div className="ajer-app">
         {ready && !profile ? <>
-            <Header title="أجر كونسول" fact="نسخة تجريبية 0.5" intro="قبل ما تبدأ، عرفنا بنفسك: بياناتك بتفضل على جهازك بس في التجربة دي." />
+            <Header title="NEXUS" fact="نسخة تجريبية 0.5" intro="قبل ما تبدأ، عرفنا بنفسك: بياناتك بتفضل على جهازك بس في التجربة دي." />
             <Group label="بياناتك" heading="معلوماتك الأساسية">
                 <ProfileForm initial={null} submitLabel="احفظ وابدأ" onSave={(p) => setProfile(p)} />
             </Group>
@@ -600,7 +600,7 @@ export function App() {
         <div className="ajer-topbar">
             <button type="button" className="ajer-menu-btn" aria-label="افتح القائمة" onClick={() => setMenuOpen(true)}>⋮</button>
         </div>
-        <Header title="أجر كونسول" fact="نسخة تجريبية 0.5" intro="وسيط بين اللي عنده بلايستيشن واللي عايز يلعب: اختار أقرب جهاز أو دراع أو لعبة، كلم صاحبها، وادفع كاش عند الاستلام." />
+        <Header title="NEXUS" fact="نسخة تجريبية 0.5" intro="وسيط بين اللي عنده بلايستيشن واللي عايز يلعب: اختار أقرب جهاز أو دراع أو لعبة، كلم صاحبها، وادفع كاش عند الاستلام." />
         <Callout title="دي نسخة تجريبية" tone="warning">كل الأجهزة والأسعار والتقييمات هنا بيانات وهمية للتوضيح، ومفيش حجز أو دفع حقيقي بيحصل من الصفحة دي.</Callout>
         <Drawer open={menuOpen} profile={profile} myCount={myListings.length} onClose={() => setMenuOpen(false)} />
         <Routes>
