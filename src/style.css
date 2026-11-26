@@ -157,3 +157,21 @@ body { background: var(--ds-page); }
 }
 
 .ajer-app button:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+
+/* الخريطة الحقيقية (Leaflet + OpenStreetMap) */
+.ajer-map-real {
+  height: 340px; width: 100%; border-radius: 16px; overflow: hidden;
+  border: 1px solid #26263f; position: relative; z-index: 0;
+  box-shadow: 0 0 24px rgba(139, 92, 255, 0.18);
+  background: #12122a;
+}
+.ajer-map-real .leaflet-control-attribution { font-size: 10px; direction: ltr; }
+.ajer-pin span {
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 50%;
+  background: #8b5cff; color: #0a0a16; font-weight: 700; font-size: 13px;
+  border: 2px solid #0a0a16; box-shadow: 0 0 14px rgba(139, 92, 255, 0.6);
+}
+.ajer-pin.is-selected span {
+  background: #2ee6d6; box-shadow: 0 0 16px rgba(46, 230, 214, 0.7);
+}

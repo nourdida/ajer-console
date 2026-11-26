@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import {
     Callout, Caption, ChoiceRow, CloseButton, Closing, Facts, FileButton, FileCard, Group, Header,
     Link, NavLink, NumberedList, Paragraph, Route, Routes, Row, Rows, Slider, TextField, useLocalState,
@@ -193,22 +195,90 @@ function Home({ consoles, gear, onRequestConsole, onRequestGear, onChat }: { con
 
 function MapPage({ consoles, onRequest }: { consoles: ConsoleListing[]; onRequest: (l: ConsoleListing) => void }) {
     const [selected, setSelected] = useState<number | null>(null);
-    const pos: Record<number, { x: number; y: number }> = { 1: { x: 265, y: 70 }, 2: { x: 85, y: 95 }, 3: { x: 125, y: 155 }, 4: { x: 290, y: 140 }, 5: { x: 60, y: 140 } };
-    const pins = consoles.map(l => ({ l, p: pos[l.number] || { x: 60 + (l.number * 53) % 260, y: 55 + (l.number * 71) % 130 } }));
+    const [locNote, setLocNote] = useState('');
+    const [locating, setLocating] = useState(false);
+    const mapDivRef = useRef<HTMLDivElement | null>(null);
+    const leafletMapRef = useRef<L.Map | null>(null);
+    const markersRef = useRef<L.Marker[]>([]);
+    const meRef = useRef<L.CircleMarker | null>(null);
+
+    // نقطة تقريبية ثابتة لكل إعلان حسب منطقته (بيانات تجريبية بدون إحداثيات حقيقية)
+    const coordsFor = (l: ConsoleListing): [number, number] => {
+        const base: [number, number] = l.area === 'زايد' ? [30.04, 30.975] : [29.96, 30.93];
+        const j = l.number * 7919;
+        const dx = ((j % 100) / 100 - 0.5) * 0.05;
+        const dy = (((j * 31) % 100) / 100 - 0.5) * 0.04;
+        return [base[0] + dx, base[1] + dy];
+    };
+
+    useEffect(() => {
+        if (!mapDivRef.current || leafletMapRef.current) return;
+        const map = L.map(mapDivRef.current).setView([30.0, 30.95], 11);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        }).addTo(map);
+        leafletMapRef.current = map;
+        return () => {
+            map.remove();
+            leafletMapRef.current = null;
+        };
+    }, []);
+
+    useEffect(() => {
+        const map = leafletMapRef.current;
+        if (!map) return;
+        markersRef.current.forEach((m) => m.remove());
+        markersRef.current = consoles.map((l) => {
+            const icon = L.divIcon({
+                className: selected === l.number ? 'ajer-pin is-selected' : 'ajer-pin',
+                html: `<span>${l.number}</span>`,
+                iconSize: [30, 30],
+                iconAnchor: [15, 15],
+            });
+            const marker = L.marker(coordsFor(l), { icon, title: `جهاز رقم ${l.number}: ${l.title}` }).addTo(map);
+            marker.on('click', () => setSelected(l.number));
+            return marker;
+        });
+    }, [consoles, selected]);
+
+    const showMyLocation = () => {
+        setLocNote('');
+        if (!('geolocation' in navigator)) {
+            setLocNote('المتصفح ده مش بيدعم تحديد المكان.');
+            return;
+        }
+        setLocating(true);
+        navigator.geolocation.getCurrentPosition(
+            (p) => {
+                const map = leafletMapRef.current;
+                if (map) {
+                    meRef.current?.remove();
+                    meRef.current = L.circleMarker([p.coords.latitude, p.coords.longitude], {
+                        radius: 9,
+                        color: '#2ee6d6',
+                        weight: 3,
+                        fillColor: '#2ee6d6',
+                        fillOpacity: 0.35,
+                    }).addTo(map);
+                    map.setView([p.coords.latitude, p.coords.longitude], 13);
+                }
+                setLocating(false);
+            },
+            () => {
+                setLocNote('مقدرناش نحدد مكانك. لو ضغطت منع بالغلط، فعّل إذن الموقع للموقع ده من إعدادات المتصفح.');
+                setLocating(false);
+            },
+            { timeout: 10000 }
+        );
+    };
+
     const current = consoles.find(l => l.number === selected);
     return <Group label="الخريطة" heading="الأجهزة حوالينك">
-        <svg className="ajer-map" viewBox="0 0 360 220" role="img" aria-label="خريطة توضيحية لأماكن الأجهزة في الشيخ زايد و6 أكتوبر">
-            <rect x="0" y="0" width="360" height="220" rx="16" fill="#12122a" />
-            <path d="M 40 60 Q 110 20 180 55 Q 160 120 90 130 Q 30 110 40 60 Z" fill="#181832" stroke="#26263f" />
-            <path d="M 200 40 Q 300 15 335 70 Q 340 150 280 190 Q 200 180 195 110 Q 190 70 200 40 Z" fill="#181832" stroke="#26263f" />
-            <text x="100" y="42" textAnchor="middle" fontSize="13" fill="#a2a3c6">6 أكتوبر</text>
-            <text x="268" y="105" textAnchor="middle" fontSize="13" fill="#a2a3c6">الشيخ زايد</text>
-            {pins.map(({ l, p }) => <g key={l.id} transform={`translate(${p.x},${p.y})`} onClick={() => setSelected(l.number)} style={{ cursor: 'pointer' }} role="button" aria-label={`جهاز رقم ${l.number}: ${l.title}`}>
-                <circle r="14" fill={selected === l.number ? '#2ee6d6' : '#8b5cff'} />
-                <text textAnchor="middle" dy="4.5" fontSize="12" fontWeight="600" fill="#0a0a16">{l.number}</text>
-            </g>)}
-        </svg>
-        <Caption>خريطة توضيحية للتجربة. دوس على رقم تشوف تفاصيله.</Caption>
+        <div ref={mapDivRef} className="ajer-map-real" role="application" aria-label="خريطة أماكن الأجهزة في الشيخ زايد و6 أكتوبر" />
+        <Caption>خريطة حقيقية من OpenStreetMap. دوس على رقم تشوف تفاصيله. الأماكن تقريبية للتوضيح، مش عنوان المالك بالظبط.</Caption>
+        <FileButton variant="secondary" compact pill onClick={showMyLocation} disabled={locating}>{locating ? 'بنحدد مكانك...' : 'أظهر مكاني على الخريطة'}</FileButton>
+        {locNote && <Caption>{locNote}</Caption>}
         {current
             ? <ConsoleCard listing={current} onRequest={() => onRequest(current)} />
             : <Callout title="اختار جهاز من الخريطة" tone="note">كل رقم على الخريطة هو جهاز معروض للإيجار.</Callout>}
