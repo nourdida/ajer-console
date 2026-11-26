@@ -177,3 +177,30 @@ body { background: var(--ds-page); }
 .ajer-pin.is-selected span {
   background: #2ee6d6; box-shadow: 0 0 16px rgba(46, 230, 214, 0.7);
 }
+
+/* شريط خطوات تتبع الطلب */
+.ajer-steps { display: flex; flex-direction: column; margin: 14px 0 6px; }
+.ajer-step { display: flex; align-items: flex-start; gap: 12px; position: relative; padding-bottom: 20px; }
+.ajer-step:last-child { padding-bottom: 0; }
+.ajer-step::before { content: ''; position: absolute; inset-inline-start: 13px; top: 28px; bottom: 0; width: 2px; background: #26263f; }
+.ajer-step:last-child::before { display: none; }
+.ajer-step.is-done::before { background: var(--ds-teal); box-shadow: 0 0 8px rgba(46, 230, 214, 0.5); }
+.ajer-step-dot {
+  width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 13px;
+  border: 1px solid #26263f; background: #1a1a33; color: var(--ds-ink-2);
+}
+.ajer-step.is-done .ajer-step-dot { border-color: var(--ds-teal); color: var(--ds-teal); background: rgba(46, 230, 214, 0.12); }
+.ajer-step.is-now .ajer-step-dot {
+  border-color: #ff2ec4; color: #ffd7f1; background: rgba(255, 46, 196, 0.15);
+  animation: ajerPulse 1.6s ease-in-out infinite;
+}
+.ajer-step-text { font-size: 14px; line-height: 28px; color: var(--ds-ink-2); }
+.ajer-step.is-now .ajer-step-text { color: var(--ds-ink); font-weight: 600; }
+@keyframes ajerPulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(255, 46, 196, 0.35); }
+  50% { box-shadow: 0 0 22px rgba(255, 46, 196, 0.8); }
+}
+.ajer-chip-btn { cursor: pointer; font-family: inherit; }
+.ajer-chip-btn:hover, .ajer-chip-btn:focus-visible { border-color: var(--ds-teal); color: var(--ds-teal); }
+.ajer-suggest { margin: 4px 0 10px; }

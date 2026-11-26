@@ -29,6 +29,9 @@ type GearItem = {
 type Request = { id: string; listingNumber: number; title: string; owner: string; days: number; rent: number; deposit: number };
 type UserProfile = { name: string; age: string; phone: string; avatar: string; address: string };
 type ChatMsg = { me: boolean; text: string };
+type Order = { id: string; requestId: string; title: string; owner: string; ownerPhone: string; pricePerDay: number; days: number; rent: number; deposit: number; createdMs: number };
+type Rental = { title: string; owner: string; ownerPhone: string; pricePerDay: number; days: number; startMs: number; returned: boolean };
+type ChatTarget = { name: string; suggestions?: string[] };
 
 const PHOTOS: Record<string, string> = { ps5: ps5Photo, ps4: ps4Photo, dualsense: dualsensePhoto, fc: fcPhoto, god: godPhoto, spiderman: spidermanPhoto };
 const AVATARS = ['🎮', '👾', '🕹️', '⚡'];
@@ -49,7 +52,17 @@ const SEED_GEAR: GearItem[] = [
     { id: 'g5', number: 10, cat: 'game', title: 'Spider-Man 2', owner: 'عمر ج.', area: 'أكتوبر', district: 'الحصري', pricePerDay: 30, deposit: 400, rating: 4.8, reviews: 7, note: 'متاح النسخة الديجيتال كمان', photoKey: 'spiderman' },
 ];
 
-const ACTIVE_RENTAL = { number: 2, title: 'بلايستيشن 5 ديجيتال', owner: 'عمر ج.', pricePerDay: 220, days: 3, startMs: Date.now() - 30 * 3600 * 1000 };
+const COURIER = { name: 'محمود س.', phone: '01001234567' };
+const DEMO_OWNER_PHONE = '01009876543';
+const STEP_MS = 15000;
+const ORDER_STEPS = [
+    'المندوب راح يستلم البلايستيشن من المالك',
+    'فحص الجهاز وتجهيزه ليك (تشيك أب)',
+    'المندوب اتحرك، في طريقه ليك',
+    'المندوب وصل، استلم جهازك',
+];
+const COURIER_CHAT_SUGGESTIONS = ['أنت فين دلوقتي؟', 'هتوصل إمتى تقريبًا؟', 'كلمت المالك خلاص؟'];
+const OWNER_CHAT_SUGGESTIONS = ['الجهاز محتاج باسورد عشان يتفتح، ممكن تبعتهولي؟', 'ممكن أضيف الأكونت بتاعي على الجهاز؟', 'فيه مشكلة في التشغيل، محتاج مساعدتك'];
 
 function yom(n: number) { return n === 1 ? 'يوم' : n === 2 ? 'يومين' : `${n} أيام`; }
 function areaName(a: string) { return a === 'زايد' ? 'الشيخ زايد' : '6 أكتوبر'; }
@@ -108,16 +121,17 @@ function GearCard({ item, onRequest, onChat }: { item: GearItem; onRequest: () =
     </div>;
 }
 
-function ChatDialog({ name, onClose }: { name: string; onClose: () => void }) {
-    const [msgs, setMsgs] = useState<ChatMsg[]>([{ me: false, text: 'أهلًا! الجهاز متاح، اسأل براحتك 🎮' }]);
+function ChatDialog({ name, suggestions, onClose }: { name: string; suggestions?: string[]; onClose: () => void }) {
+    const [msgs, setMsgs] = useState<ChatMsg[]>([{ me: false, text: suggestions ? 'أهلًا! اسأل براحتك 🎮' : 'أهلًا! الجهاز متاح، اسأل براحتك 🎮' }]);
     const [text, setText] = useState('');
-    const send = () => {
-        const t = text.trim();
-        if (!t) return;
-        setMsgs(m => [...m, { me: true, text: t }]);
+    const sendText = (t: string) => {
+        const v = t.trim();
+        if (!v) return;
+        setMsgs(m => [...m, { me: true, text: v }]);
         setText('');
         setTimeout(() => setMsgs(m => [...m, { me: false, text: 'رد تجريبي: في النسخة الحقيقية الطرف التاني هيرد عليك هنا.' }]), 700);
     };
+    const send = () => sendText(text);
     return <div className="ajer-overlay" role="dialog" aria-modal="true" aria-label={`محادثة مع ${name}`}>
         <div className="ajer-sheet">
             <div className="ajer-sheet-close"><CloseButton label="إغلاق" onClick={onClose} /></div>
@@ -125,6 +139,9 @@ function ChatDialog({ name, onClose }: { name: string; onClose: () => void }) {
             <div className="ajer-chat">
                 {msgs.map((m, i) => <div key={i} className={m.me ? 'ajer-bubble ajer-bubble-me' : 'ajer-bubble'}>{m.text}</div>)}
             </div>
+            {suggestions && suggestions.length > 0 && <div className="ajer-chips ajer-suggest">
+                {suggestions.map(s => <button key={s} type="button" className="ajer-chip ajer-chip-btn" onClick={() => sendText(s)}>{s}</button>)}
+            </div>}
             <div className="ajer-chat-row">
                 <input className="ajer-chat-input" value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') send(); }} placeholder="اكتب رسالتك..." aria-label="اكتب رسالتك" />
                 <FileButton variant="primary" compact pill onClick={send}>ابعت</FileButton>
@@ -305,7 +322,8 @@ function RequestPage({ target, hasOpenRequest, onConfirm }: { target: { title: s
                 { label: 'الدفع', value: 'كاش عند الاستلام' },
                 { label: 'التتبع', value: 'وافقت على جهاز التتبع ضد السرقة' },
             ]} />
-            <Link className="file-button is-compact" data-variant="primary" to="/profile">شوف طلبك في حسابك</Link>
+            <Link className="file-button is-compact" data-variant="primary" to="/order">تابع وصول جهازك لايف</Link>
+            <Link className="file-button is-compact" data-variant="secondary" to="/profile">شوف طلبك في حسابك</Link>
         </Group>;
     }
     if (hasOpenRequest) return <Group label="طلب إيجار" heading="عندك طلب مفتوح">
@@ -423,29 +441,80 @@ function CountdownRing({ frac, label, sub }: { frac: number; label: string; sub:
     </div>;
 }
 
-function ActiveRental({ returned, onReturn }: { returned: boolean; onReturn: () => void }) {
+function OrderPage({ order, onHandover, onChat }: { order: Order | null; onHandover: () => void; onChat: (name: string, suggestions?: string[]) => void }) {
+    const now = useNow(1000);
+    if (!order) return <Group label="تتبع طلبك" heading="مفيش طلب شغال دلوقتي">
+        <Callout title="لما تطلب جهاز هتلاقي التتبع هنا" tone="note">اطلب جهاز من الإعلانات، وأول ما تؤكد الطلب هتقدر تتابع المندوب خطوة بخطوة من الصفحة دي.</Callout>
+        <Link className="file-button is-compact" data-variant="secondary" to="/">شوف الإعلانات</Link>
+    </Group>;
+    const stage = Math.min(ORDER_STEPS.length - 1, Math.floor((now - order.createdMs) / STEP_MS));
+    const arrived = stage === ORDER_STEPS.length - 1;
+    const widths = [12, 40, 70, 100];
+    return <>
+        <Group label="تتبع طلبك" heading={order.title}>
+            <Paragraph>{order.owner} · {yom(order.days)} · المطلوب عند الاستلام {order.rent + order.deposit} ج.م كاش</Paragraph>
+            <div className="ajer-progress" role="img" aria-label={`طلبك في خطوة ${stage + 1} من ${ORDER_STEPS.length}`}><div style={{ width: `${widths[stage]}%` }} /></div>
+            <div className="ajer-steps">
+                {ORDER_STEPS.map((s, i) => <div key={i} className={`ajer-step${i < stage ? ' is-done' : ''}${i === stage ? ' is-now' : ''}`}>
+                    <span className="ajer-step-dot">{i < stage ? '✓' : i + 1}</span>
+                    <span className="ajer-step-text">{s}</span>
+                </div>)}
+            </div>
+            <Caption>تجربة بسرعة مضاعفة: كل خطوة بتاخد ١٥ ثانية. في النسخة الحقيقية المندوب هو اللي بيحدث الخطوات أول بأول.</Caption>
+            {arrived && <>
+                <Callout title="المندوب وصل" tone="note">استلم جهازك وراجعه كويس قدام المندوب قبل ما الاستلام يتأكد.</Callout>
+                <Link className="file-button" data-variant="primary" to="/profile" onClick={onHandover}>تأكيد الاستلام (زرار المندوب)</Link>
+                <Caption>في النسخة الحقيقية الزرار ده بيظهر للمندوب لما يسلمك الجهاز، وأول ما يدوسه العداد بتاعك بيبدأ.</Caption>
+            </>}
+        </Group>
+        <Group label="المندوب معاك طول الطريق" heading={COURIER.name}>
+            <Facts items={[
+                { label: 'الاسم', value: COURIER.name },
+                { label: 'موبايل', value: COURIER.phone },
+                { label: 'الحالة', value: ORDER_STEPS[stage] },
+            ]} />
+            <div className="ajer-card-actions">
+                <a className="file-button is-compact" data-variant="primary" href={`tel:${COURIER.phone}`}>اتصل بالمندوب</a>
+                <FileButton variant="secondary" compact pill onClick={() => onChat(COURIER.name, COURIER_CHAT_SUGGESTIONS)}>ابعتله رسالة</FileButton>
+            </div>
+            <Caption>مندوب تجريبي ببيانات وهمية. في النسخة الحقيقية بيبقى مندوب أجر كونسول وتقدر تكلمه أو تبعتله في أي وقت لحد ما تستلم.</Caption>
+        </Group>
+    </>;
+}
+
+function ActiveRental({ rental, onReturn, onClear, onChat }: { rental: Rental; onReturn: () => void; onClear: () => void; onChat: (name: string, suggestions?: string[]) => void }) {
     const now = useNow(30000);
-    const endMs = ACTIVE_RENTAL.startMs + ACTIVE_RENTAL.days * 86400000;
+    const endMs = rental.startMs + rental.days * 86400000;
     const remainMs = Math.max(0, endMs - now);
     const remDays = Math.floor(remainMs / 86400000);
     const remHours = Math.floor((remainMs % 86400000) / 3600000);
-    const usedMs = now - ACTIVE_RENTAL.startMs;
-    const usedDays = Math.min(ACTIVE_RENTAL.days, Math.max(1, Math.ceil(usedMs / 86400000)));
-    const refund = Math.max(0, (ACTIVE_RENTAL.days - usedDays) * ACTIVE_RENTAL.pricePerDay);
-    const frac = Math.max(0, Math.min(1, remainMs / (ACTIVE_RENTAL.days * 86400000)));
-    const remainLabel = `${remDays > 0 ? yom(remDays) + ' و' : ''}${remHours} ساعة`;
-    return <Group label="إيجارك الحالي" heading={ACTIVE_RENTAL.title}>
-        {returned ? <Callout title="اتسجل إرجاع بدري (تجريبي)" tone="note">المفروض يرجعلك {refund} ج.م من {ACTIVE_RENTAL.owner} فرق الأيام الباقية، غير التأمين.</Callout> : <>
-            <CountdownRing frac={frac} label={remainLabel} sub="فاضل على التسليم" />
+    const remMins = Math.floor((remainMs % 3600000) / 60000);
+    const usedMs = now - rental.startMs;
+    const usedDays = Math.min(rental.days, Math.max(1, Math.ceil(usedMs / 86400000)));
+    const refund = Math.max(0, (rental.days - usedDays) * rental.pricePerDay);
+    const frac = Math.max(0, Math.min(1, remainMs / (rental.days * 86400000)));
+    const remainLabel = remDays > 0 ? `${yom(remDays)} و${remHours} ساعة` : `${remHours} ساعة و${remMins} دقيقة`;
+    return <Group label="إيجارك الحالي" heading={rental.title}>
+        {rental.returned ? <>
+            <Callout title="اتسجل إرجاع بدري (تجريبي)" tone="note">المفروض يرجعلك {refund} ج.م من {rental.owner} فرق الأيام الباقية، غير التأمين.</Callout>
+            <FileButton variant="ghost" compact onClick={onClear}>إنهاء الإيجار ومسحه</FileButton>
+        </> : <>
+            <CountdownRing frac={frac} label={remainLabel} sub="فاضل على الإرجاع" />
             <Facts items={[
-                { label: 'من', value: ACTIVE_RENTAL.owner },
-                { label: 'المدة', value: yom(ACTIVE_RENTAL.days) },
+                { label: 'المالك', value: rental.owner },
+                { label: 'موبايل المالك', value: rental.ownerPhone },
+                { label: 'المدة', value: yom(rental.days) },
                 { label: 'التتبع', value: 'وافقت على جهاز التتبع ضد السرقة' },
             ]} />
-            <Callout title="لو رجعته بدري" tone="warning">لو سلمته دلوقتي بيرجعلك حوالي {refund} ج.م فرق الأيام الباقية من {ACTIVE_RENTAL.owner}.</Callout>
+            <div className="ajer-card-actions">
+                <a className="file-button is-compact" data-variant="primary" href={`tel:${rental.ownerPhone}`}>اتصل بالمالك</a>
+                <FileButton variant="secondary" compact pill onClick={() => onChat(rental.owner, OWNER_CHAT_SUGGESTIONS)}>كلم {rental.owner}</FileButton>
+            </div>
+            <Caption>لو الجهاز محتاج باسورد عشان يتفتح، أو عايز تستأذن تضيف الأكونت بتاعك، كلم المالك من هنا.</Caption>
+            <Callout title="لو رجعته بدري" tone="warning">لو سلمته دلوقتي بيرجعلك حوالي {refund} ج.م فرق الأيام الباقية من {rental.owner}.</Callout>
             <FileButton variant="secondary" compact pill onClick={onReturn}>سجل إرجاع بدري</FileButton>
         </>}
-        <Caption>إيجار تجريبي للتوضيح، العداد بيعد لحظة بلحظة.</Caption>
+        <Caption>العداد بيعد لحظة بلحظة من لحظة الاستلام.</Caption>
     </Group>;
 }
 
@@ -481,10 +550,10 @@ function ProfileForm({ initial, submitLabel, onSave }: { initial: UserProfile | 
     </>;
 }
 
-function ProfilePage({ profile, requests, myListings, rentalReturned, onEditProfile, onReturn, onCancelRequest, onDeleteListing, onChat, onTrack }: {
-    profile: UserProfile; requests: Request[]; myListings: ConsoleListing[]; rentalReturned: boolean;
-    onEditProfile: () => void; onReturn: () => void; onCancelRequest: (id: string) => void;
-    onDeleteListing: (id: string) => void; onChat: (name: string) => void; onTrack: (l: ConsoleListing) => void;
+function ProfilePage({ profile, requests, myListings, rental, onEditProfile, onReturn, onClearRental, onCancelRequest, onDeleteListing, onChat, onTrack }: {
+    profile: UserProfile; requests: Request[]; myListings: ConsoleListing[]; rental: Rental | null;
+    onEditProfile: () => void; onReturn: () => void; onClearRental: () => void; onCancelRequest: (id: string) => void;
+    onDeleteListing: (id: string) => void; onChat: (name: string, suggestions?: string[]) => void; onTrack: (l: ConsoleListing) => void;
 }) {
     return <>
         <Group label="حسابك" heading={`أهلًا ${profile.name}`}>
@@ -504,13 +573,14 @@ function ProfilePage({ profile, requests, myListings, rentalReturned, onEditProf
             ]} />
             <div className="ajer-progress" role="img" aria-label="وصلت لـ 60 في المية من الطريق للمستوى الفضي"><div style={{ width: '60%' }} /></div>
         </Group>
-        <ActiveRental returned={rentalReturned} onReturn={onReturn} />
+        {rental && <ActiveRental rental={rental} onReturn={onReturn} onClear={onClearRental} onChat={onChat} />}
         {requests.length > 0 && <Group label="طلباتك" heading>
             {requests.map(r => <div key={r.id} className="ajer-card">
                 <div className="ajer-card-body">
                     <div className="ajer-card-title">إعلان رقم {r.listingNumber}: {r.title}</div>
                     <div className="ajer-muted">{r.owner} · {yom(r.days)} · إيجار <bdi>{r.rent}</bdi> ج.م وتأمين <bdi>{r.deposit}</bdi> ج.م · كاش عند الاستلام</div>
                     <div className="ajer-card-actions">
+                        <Link className="file-button is-compact" data-variant="primary" to="/order">تتبع طلبك لايف</Link>
                         <FileButton variant="secondary" compact pill onClick={() => onChat(r.owner)}>كلم {r.owner}</FileButton>
                         <FileButton variant="ghost" compact onClick={() => onCancelRequest(r.id)}>الغي الطلب</FileButton>
                     </div>
@@ -555,6 +625,7 @@ function Drawer({ open, profile, myCount, onClose }: { open: boolean; profile: U
             <nav className="ajer-drawer-nav" aria-label="صفحات التطبيق">
                 {item('/', 'الإعلانات', true)}
                 {item('/map', 'الخريطة')}
+                {item('/order', 'تتبع طلبك')}
                 {item('/add', 'أضف إعلانك')}
                 {item('/profile', `إعلاناتي${myCount ? ` (${myCount})` : ''}`)}
                 {item('/profile', 'حسابك')}
@@ -572,9 +643,10 @@ export function App() {
     const [myListingsRaw, setMyListings, listingsSaved] = useLocalState('ajer-my-listings.v1', [] as any[]);
     const [requestsRaw, setRequests, requestsSaved] = useLocalState('ajer-requests.v1', [] as any[]);
     const [profile, setProfile, profileSaved] = useLocalState('ajer-profile.v1', null as UserProfile | null);
-    const [rental, setRental, rentalSaved] = useLocalState('ajer-rental.v1', { returned: false });
+    const [order, setOrder, orderSaved] = useLocalState('ajer-order.v1', null as Order | null);
+    const [rental, setRental, rentalSaved] = useLocalState('ajer-rental.v2', null as Rental | null);
     const [requestTarget, setRequestTarget] = useState<{ title: string; owner: string; ownerLine: string; pricePerDay: number; deposit: number; number: number } | null>(null);
-    const [chatWith, setChatWith] = useState<string | null>(null);
+    const [chatWith, setChatWith] = useState<ChatTarget | null>(null);
     const [tracking, setTracking] = useState<ConsoleListing | null>(null);
     const [menuOpen, setMenuOpen] = useState(false);
     const [editProfile, setEditProfile] = useState(false);
@@ -588,11 +660,17 @@ export function App() {
     };
     const requestConsole = (l: ConsoleListing) => setRequestTarget({ title: l.title, owner: l.owner, ownerLine: `${l.owner} · ${areaName(l.area)}، ${l.district}`, pricePerDay: l.pricePerDay, deposit: l.deposit, number: l.number });
     const requestGear = (g: GearItem) => setRequestTarget({ title: g.title, owner: g.owner, ownerLine: `${g.owner} · ${areaName(g.area)}، ${g.district}`, pricePerDay: g.pricePerDay, deposit: g.deposit, number: g.number });
-    const ready = listingsSaved.ready && requestsSaved.ready && profileSaved.ready && rentalSaved.ready;
+    const ready = listingsSaved.ready && requestsSaved.ready && profileSaved.ready && orderSaved.ready && rentalSaved.ready;
+    const handover = () => {
+        if (!order || !rentalSaved.ready) return;
+        setRental({ title: order.title, owner: order.owner, ownerPhone: order.ownerPhone, pricePerDay: order.pricePerDay, days: order.days, startMs: Date.now(), returned: false });
+        if (requestsSaved.ready) setRequests(requestsRaw.filter(r => r.id !== order.requestId));
+        if (orderSaved.ready) setOrder(null);
+    };
     return <FileCard lang="ar" dir="rtl">
         <div className="ajer-app">
         {ready && !profile ? <>
-            <Header title="NEXUS" fact="نسخة تجريبية 0.5" intro="قبل ما تبدأ، عرفنا بنفسك: بياناتك بتفضل على جهازك بس في التجربة دي." />
+            <Header title="NEXUS" fact="نسخة تجريبية 0.6" intro="قبل ما تبدأ، عرفنا بنفسك: بياناتك بتفضل على جهازك بس في التجربة دي." />
             <Group label="بياناتك" heading="معلوماتك الأساسية">
                 <ProfileForm initial={null} submitLabel="احفظ وابدأ" onSave={(p) => setProfile(p)} />
             </Group>
@@ -600,17 +678,18 @@ export function App() {
         <div className="ajer-topbar">
             <button type="button" className="ajer-menu-btn" aria-label="افتح القائمة" onClick={() => setMenuOpen(true)}>⋮</button>
         </div>
-        <Header title="NEXUS" fact="نسخة تجريبية 0.5" intro="وسيط بين اللي عنده بلايستيشن واللي عايز يلعب: اختار أقرب جهاز أو دراع أو لعبة، كلم صاحبها، وادفع كاش عند الاستلام." />
+        <Header title="NEXUS" fact="نسخة تجريبية 0.6" intro="وسيط بين اللي عنده بلايستيشن واللي عايز يلعب: اختار أقرب جهاز أو دراع أو لعبة، كلم صاحبها، وادفع كاش عند الاستلام." />
         <Callout title="دي نسخة تجريبية" tone="warning">كل الأجهزة والأسعار والتقييمات هنا بيانات وهمية للتوضيح، ومفيش حجز أو دفع حقيقي بيحصل من الصفحة دي.</Callout>
         <Drawer open={menuOpen} profile={profile} myCount={myListings.length} onClose={() => setMenuOpen(false)} />
         <Routes>
-            <Route path="/" element={<Home consoles={consoles} gear={SEED_GEAR} onRequestConsole={requestConsole} onRequestGear={requestGear} onChat={setChatWith} />} />
+            <Route path="/" element={<Home consoles={consoles} gear={SEED_GEAR} onRequestConsole={requestConsole} onRequestGear={requestGear} onChat={(n) => setChatWith({ name: n })} />} />
             <Route path="/map" element={<MapPage consoles={consoles} onRequest={requestConsole} />} />
-            <Route path="/add" element={<AddPage onAdd={addListing} blocked={!rental.returned} />} />
-            <Route path="/request" element={<RequestPage target={requestTarget} hasOpenRequest={requests.length > 0} onConfirm={(r) => { if (requestsSaved.ready && requestTarget) setRequests([...requestsRaw, { id: `r${Date.now()}`, listingNumber: requestTarget.number, title: requestTarget.title, owner: requestTarget.owner, days: r.days, rent: r.rent, deposit: r.deposit }]); }} />} />
-            <Route path="/profile" element={profile ? <ProfilePage profile={profile} requests={requests} myListings={myListings} rentalReturned={rental.returned} onEditProfile={() => setEditProfile(true)} onReturn={() => rentalSaved.ready && setRental({ returned: true })} onCancelRequest={(id) => requestsSaved.ready && setRequests(requestsRaw.filter(r => r.id !== id))} onDeleteListing={(id) => listingsSaved.ready && setMyListings(myListingsRaw.filter(l => l.id !== id))} onChat={setChatWith} onTrack={setTracking} /> : <Group label="حسابك" heading="سجل بياناتك الأول"><Callout title="لسه مفيش بيانات" tone="note">ارجع للصفحة الرئيسية واملأ بياناتك الأول.</Callout></Group>} />
+            <Route path="/add" element={<AddPage onAdd={addListing} blocked={!!rental && !rental.returned} />} />
+            <Route path="/order" element={<OrderPage order={order} onHandover={handover} onChat={(n, s) => setChatWith({ name: n, suggestions: s })} />} />
+            <Route path="/request" element={<RequestPage target={requestTarget} hasOpenRequest={requests.length > 0} onConfirm={(r) => { if (requestsSaved.ready && orderSaved.ready && requestTarget) { const reqId = `r${Date.now()}`; setRequests([...requestsRaw, { id: reqId, listingNumber: requestTarget.number, title: requestTarget.title, owner: requestTarget.owner, days: r.days, rent: r.rent, deposit: r.deposit }]); setOrder({ id: `o${Date.now()}`, requestId: reqId, title: requestTarget.title, owner: requestTarget.owner, ownerPhone: DEMO_OWNER_PHONE, pricePerDay: requestTarget.pricePerDay, days: r.days, rent: r.rent, deposit: r.deposit, createdMs: Date.now() }); } }} />} />
+            <Route path="/profile" element={profile ? <ProfilePage profile={profile} requests={requests} myListings={myListings} rental={rental} onEditProfile={() => setEditProfile(true)} onReturn={() => rentalSaved.ready && rental && setRental({ ...rental, returned: true })} onClearRental={() => rentalSaved.ready && setRental(null)} onCancelRequest={(id) => { if (requestsSaved.ready) setRequests(requestsRaw.filter(r => r.id !== id)); if (orderSaved.ready && order && order.requestId === id) setOrder(null); }} onDeleteListing={(id) => listingsSaved.ready && setMyListings(myListingsRaw.filter(l => l.id !== id))} onChat={(n, s) => setChatWith({ name: n, suggestions: s })} onTrack={setTracking} /> : <Group label="حسابك" heading="سجل بياناتك الأول"><Callout title="لسه مفيش بيانات" tone="note">ارجع للصفحة الرئيسية واملأ بياناتك الأول.</Callout></Group>} />
         </Routes>
-        {chatWith && <ChatDialog name={chatWith} onClose={() => setChatWith(null)} />}
+        {chatWith && <ChatDialog name={chatWith.name} suggestions={chatWith.suggestions} onClose={() => setChatWith(null)} />}
         {tracking && <TrackingDialog title={tracking.title} onClose={() => setTracking(null)} />}
         {editProfile && profile && <div className="ajer-overlay" role="dialog" aria-modal="true" aria-label="تعديل بياناتك">
             <div className="ajer-sheet">
@@ -619,9 +698,9 @@ export function App() {
                 <ProfileForm initial={profile} submitLabel="احفظ التعديل" onSave={(p) => { setProfile(p); setEditProfile(false); }} />
             </div>
         </div>}
-        {(() => { const msgs = [...new Set([listingsSaved.message, requestsSaved.message, profileSaved.message, rentalSaved.message].filter(Boolean))]; return ready && msgs.length ? <Caption>{msgs.join(' ')}</Caption> : null; })()}
+        {(() => { const msgs = [...new Set([listingsSaved.message, requestsSaved.message, profileSaved.message, orderSaved.message, rentalSaved.message].filter(Boolean))]; return ready && msgs.length ? <Caption>{msgs.join(' ')}</Caption> : null; })()}
         <Caption>صور الأجهزة: بلايستيشن 5 بواسطة Soberian وبلايستيشن 4 بواسطة Evan-Amos والدراع بواسطة Viper polo، عبر ويكيميديا كومنز. أغلفة الألعاب رسوم توضيحية.</Caption>
-        <Closing>نسخة تجريبية 0.5. اتعملت 26 نوفمبر 2026. مفيش طلبات حقيقية اتبعتت.</Closing>
+        <Closing>نسخة تجريبية 0.6. اتعملت 26 نوفمبر 2026. مفيش طلبات حقيقية اتبعتت.</Closing>
         </>}
         </div>
     </FileCard>;
