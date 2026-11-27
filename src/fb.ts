@@ -157,6 +157,7 @@ export async function fbUpdateDevice(id: string, patch: Partial<DeviceDoc>) {
 }
 
 export async function fbDeleteDevice(id: string) {
+    try { await deleteDoc(doc(db, 'devices', id, 'private', 'exact')); } catch { /* لو مش موجود */ }
     await deleteDoc(doc(db, 'devices', id));
 }
 
