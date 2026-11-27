@@ -24,14 +24,8 @@ type ConsoleListing = {
     area: 'زايد' | 'أكتوبر'; district: string;
     pricePerDay: number; deposit: number; rating: number; reviews: number; delivery: boolean;
     model: string; storage: string; controllers: number; games: string[]; includes: string;
-    photoKey?: string; mine?: boolean; demo?: boolean; ownerId?: string; photoData?: string; createdAt?: number;
+    photoKey?: string; mine?: boolean; ownerId?: string; photoData?: string; createdAt?: number;
     status?: 'open' | 'courier' | 'rented'; requestAt?: number; courierMs?: number; dueMs?: number;
-};
-
-type GearItem = {
-    id: string; number: number; cat: 'controller' | 'game'; title: string; owner: string;
-    area: 'زايد' | 'أكتوبر'; district: string;
-    pricePerDay: number; deposit: number; rating: number; reviews: number; note: string; photoKey: string;
 };
 
 type Request = { id: string; listingNumber: number; title: string; owner: string; days: number; rent: number; deposit: number; fromMs?: number; deliveryFee?: number; promo?: string; discount?: number; payMethod?: string };
@@ -48,22 +42,6 @@ type ChatTarget = { name: string; suggestions?: string[]; channelId?: string };
 
 const PHOTOS: Record<string, string> = { ps5: ps5Photo, ps4: ps4Photo, dualsense: dualsensePhoto, fc: fcPhoto, god: godPhoto, spiderman: spidermanPhoto };
 const AVATARS = ['🎮', '👾', '🕹️', '⚡'];
-
-const SEED_CONSOLES: ConsoleListing[] = [
-    { id: 's1', number: 1, kind: 'PS5', title: 'بلايستيشن 5 مع يدتين', owner: 'كريم م.', area: 'زايد', district: 'الحي الأول', pricePerDay: 250, deposit: 1000, rating: 4.8, reviews: 12, delivery: true, model: 'ستاندارد', storage: '825GB', controllers: 2, games: ['FC 25', 'God of War'], includes: 'يدتين وشاحن وكابل HDMI' },
-    { id: 's2', number: 2, kind: 'PS5', title: 'بلايستيشن 5 ديجيتال', owner: 'عمر ج.', area: 'أكتوبر', district: 'الحصري', pricePerDay: 220, deposit: 800, rating: 4.5, reviews: 8, delivery: true, model: 'ديجيتال', storage: '825GB', controllers: 2, games: ['FC 25', 'Spider-Man 2', 'Tekken 8'], includes: 'يدتين وقاعدة شحن' },
-    { id: 's3', number: 3, kind: 'PS4', title: 'بلايستيشن 4 مع خمس ألعاب', owner: 'مازن ع.', area: 'أكتوبر', district: 'حي المنتزه', pricePerDay: 120, deposit: 500, rating: 4.9, reviews: 21, delivery: false, model: 'سليم', storage: '500GB', controllers: 1, games: ['FIFA 23', 'GTA V', 'PES 21', 'Minecraft', 'Fortnite'], includes: 'يد واحدة وكابل HDMI' },
-    { id: 's4', number: 4, kind: 'PS4', title: 'بلايستيشن 4 برو', owner: 'سارة م.', area: 'زايد', district: 'كمبوند زيد', pricePerDay: 150, deposit: 600, rating: 4.2, reviews: 5, delivery: true, model: 'برو', storage: '1TB', controllers: 2, games: ['The Last of Us'], includes: 'يدتين وشاحن' },
-    { id: 's5', number: 5, kind: 'PS4', title: 'بلايستيشن 4 سليم', owner: 'تامر ع.', area: 'أكتوبر', district: 'الحصري', pricePerDay: 100, deposit: 400, rating: 4.6, reviews: 14, delivery: true, model: 'سليم', storage: '1TB', controllers: 4, games: ['FC 25', 'FIFA 23'], includes: 'أربع إيدي للعب الجماعي' },
-];
-
-const SEED_GEAR: GearItem[] = [
-    { id: 'g1', number: 6, cat: 'controller', title: 'دراع PS5 DualSense', owner: 'أحمد س.', area: 'زايد', district: 'الحي الثاني', pricePerDay: 40, deposit: 300, rating: 4.7, reviews: 9, note: 'نضيف من غير عيوب، شحنته كاملة', photoKey: 'dualsense' },
-    { id: 'g2', number: 7, cat: 'controller', title: 'دراع PS4 DualShock', owner: 'تامر ع.', area: 'أكتوبر', district: 'الحصري', pricePerDay: 25, deposit: 200, rating: 4.4, reviews: 6, note: 'متاح منه كذا واحد للعب الجماعي', photoKey: 'dualsense' },
-    { id: 'g3', number: 8, cat: 'game', title: 'FC 25 أسطوانة', owner: 'كريم م.', area: 'زايد', district: 'الحي الأول', pricePerDay: 30, deposit: 400, rating: 5.0, reviews: 3, note: 'الأسطوانة سليمة من غير خدوش', photoKey: 'fc' },
-    { id: 'g4', number: 9, cat: 'game', title: 'God of War Ragnarok', owner: 'مازن ع.', area: 'أكتوبر', district: 'حي المنتزه', pricePerDay: 25, deposit: 400, rating: 4.9, reviews: 4, note: 'نسخة PS5', photoKey: 'god' },
-    { id: 'g5', number: 10, cat: 'game', title: 'Spider-Man 2', owner: 'عمر ج.', area: 'أكتوبر', district: 'الحصري', pricePerDay: 30, deposit: 400, rating: 4.8, reviews: 7, note: 'متاح النسخة الديجيتال كمان', photoKey: 'spiderman' },
-];
 
 const COURIER = { name: 'محمود س.', phone: '01001234567' };
 const DEMO_OWNER_PHONE = '01009876543';
@@ -158,8 +136,6 @@ async function checkAdminPassword(pw: string): Promise<boolean> {
         localStorage.setItem('nexus-migrated.v1', '1');
     } catch { /* تجاهل */ }
 })();
-// أيام محجوزة تجريبية لكل جهاز: [بعد كام يوم من النهارده, عدد الأيام]
-const SEED_BUSY: Record<number, [number, number][]> = { 1: [[3, 2]], 2: [[1, 1]], 4: [[5, 3]] };
 const COND_CHECKS = ['الجهاز بيشتغل تمام', 'الدراعات سليمة وشغالة', 'الكابلات والشاحن موجودين', 'مفيش خدوش أو كسور جديدة'];
 const EMPTY_COND: CondState = { checks: COND_CHECKS.map(() => false), photos: [] };
 
@@ -168,10 +144,6 @@ function busyDaysFor(l: ConsoleListing | null | undefined, orders: OrderDoc[]): 
     const s = new Set<number>();
     if (!l) return s;
     const today = dayStamp(Date.now());
-    if (l.demo || !l.ownerId) {
-        (SEED_BUSY[l.number] || []).forEach(([off, len]) => { for (let i = 0; i < len; i++) s.add(today + (off + i) * 86400000); });
-        return s;
-    }
     orders.filter(o => o.deviceId === l.id && ORDER_BUSY.includes(o.status) && o.fromMs !== undefined)
         .forEach(o => { for (let i = 0; i < o.days; i++) s.add(dayStamp(o.fromMs as number) + i * 86400000); });
     return s;
@@ -194,24 +166,6 @@ function fileToSmallDataUrl(f: File, maxW: number, cb: (url: string) => void) {
     };
     reader.readAsDataURL(f);
 }
-const SEED_USERS: AdminUser[] = [
-    { id: 'u1', name: 'كريم م.', phone: '01011112222', area: 'الشيخ زايد، الحي الأول', age: '26', joined: '12 نوفمبر 2026', status: 'نشط', listings: 1, rentals: 4 },
-    { id: 'u2', name: 'عمر ج.', phone: '01033334444', area: '6 أكتوبر، الحصري', age: '22', joined: '14 نوفمبر 2026', status: 'نشط', listings: 1, rentals: 2 },
-    { id: 'u3', name: 'مازن ع.', phone: '01055556666', area: '6 أكتوبر، حي المنتزه', age: '31', joined: '15 نوفمبر 2026', status: 'ساب التطبيق', listings: 0, rentals: 1 },
-    { id: 'u4', name: 'سارة م.', phone: '01077778888', area: 'الشيخ زايد، كمبوند زيد', age: '27', joined: '20 نوفمبر 2026', status: 'نشط', listings: 1, rentals: 0 },
-];
-const SEED_COMPLAINTS: Complaint[] = [
-    { id: 'c1', from: 'عمر ج.', subject: 'مستأجر رجع الجهاز متأخر يوم', detail: 'الجهاز اتأخر عن المعاد المتفق عليه ومحصلش تواصل.', status: 'مفتوحة', date: 'أمس' },
-    { id: 'c2', from: 'سارة م.', subject: 'الدراع التاني مش شغال كويس', detail: 'الدراع فيه دريفت بسيط واتبلغت الدعم بيه.', status: 'مقفولة', date: 'من 3 أيام' },
-];
-const SEED_LOG = [
-    'كريم م. سجل دخول - النهارده 2:15 م',
-    'سارة م. أضافت إعلان جديد - النهارده 1:40 م',
-    'عمر ج. أكد استلام جهاز - أمس 9:02 م',
-    'مازن ع. ساب التطبيق - أمس 6:30 م',
-    'سارة م. سجلت حساب جديد - 20 نوفمبر',
-];
-
 function yom(n: number) { return n === 1 ? 'يوم' : n === 2 ? 'يومين' : `${n} أيام`; }
 function statusAr(s: OrderStatus): string {
     return ({ requested: 'الطلب عند المالك', accepted: 'بنستنى مندوب يستلمه', taken: 'مندوب استلم الطلب', pickedup: 'المندوب في الطريق للمستأجر', arrived: 'المندوب وصل عند المستأجر', delivered: 'قيد الإيجار', returning: 'الإرجاع جاري', returned: 'اترجع خلاص', declined: 'اترفض' } as Record<OrderStatus, string>)[s];
@@ -234,7 +188,7 @@ function ConsoleCard({ listing, onOpen, onDelete, onTrack }: { listing: ConsoleL
     const inner = <>
         <img className="nexus-thumb" src={listing.photoData || PHOTOS[listing.photoKey || listing.kind.toLowerCase()]} alt={listing.kind === 'PS5' ? 'جهاز بلايستيشن 5 مع ذراع تحكم' : 'جهاز بلايستيشن 4 مع ذراع تحكم'} />
         <div className="nexus-card-body">
-            <div className="nexus-card-title"><span className="nexus-num">{listing.number}</span> {listing.title}{listing.demo ? <span className="nexus-badge">تجريبي</span> : null}</div>
+            <div className="nexus-card-title"><span className="nexus-num">{listing.number}</span> {listing.title}</div>
             <div className="nexus-muted">{listing.owner} · {areaName(listing.area)}، {listing.district}</div>
             <div className="nexus-muted"><Stars rating={listing.rating} reviews={listing.reviews} />' · توصيل بالمندوب'</div>
             {listing.games.length > 0 && <div className="nexus-chips">{listing.games.map((g, i) => <span key={g} className="nexus-chip" style={gameChipStyle(i)}>{g}</span>)}</div>}
@@ -253,26 +207,6 @@ function ConsoleCard({ listing, onOpen, onDelete, onTrack }: { listing: ConsoleL
     return <div className="nexus-card">{inner}</div>;
 }
 
-function GearCard({ item, onRequest, onChat }: { item: GearItem; onRequest: () => void; onChat: () => void }) {
-    return <div className="nexus-card">
-        <img className="nexus-thumb" src={PHOTOS[item.photoKey]} alt={item.title} />
-        <div className="nexus-card-body">
-            <div className="nexus-card-title"><span className="nexus-num">{item.number}</span> {item.title}</div>
-            <div className="nexus-muted">{item.owner} · {areaName(item.area)}، {item.district}</div>
-            <div className="nexus-muted">{item.note}</div>
-            <div className="nexus-muted"><Stars rating={item.rating} reviews={item.reviews} /></div>
-            <div className="nexus-card-foot">
-                <span className="nexus-price"><bdi>{item.pricePerDay}</bdi> ج.م في اليوم</span>
-                <span className="nexus-muted">تأمين <bdi>{item.deposit}</bdi> ج.م بيرجع</span>
-            </div>
-            <div className="nexus-card-actions">
-                <Link className="file-button is-compact" data-variant="primary" to="/request" onClick={onRequest}>اطلب إيجار</Link>
-                <FileButton variant="secondary" compact pill onClick={onChat}>كلمه</FileButton>
-            </div>
-        </div>
-    </div>;
-}
-
 function ChatDialog({ name, suggestions, onClose, channelId, meUid, meName }: { name: string; suggestions?: string[]; onClose: () => void; channelId?: string; meUid?: string; meName?: string }) {
     const live = useMessages(channelId);
     const [msgs, setMsgs] = useState<ChatMsg[]>([{ me: false, text: suggestions ? 'أهلًا! اسأل براحتك 🎮' : 'أهلًا! الجهاز متاح، اسأل براحتك 🎮' }]);
@@ -286,7 +220,6 @@ function ChatDialog({ name, suggestions, onClose, channelId, meUid, meName }: { 
             fbSendMessage(channelId as string, meUid as string, meName || 'مستخدم', v).catch((e) => { console.warn(e); setSendErr('الرسالة متبعتتش. اتأكد من النت وجرب تاني.'); });
         } else {
             setMsgs(m => [...m, { me: true, text: v }]);
-            setTimeout(() => setMsgs(m => [...m, { me: false, text: 'رد تجريبي: في النسخة الحقيقية الطرف التاني هيرد عليك هنا.' }]), 700);
         }
         setText('');
     };
@@ -311,7 +244,7 @@ function ChatDialog({ name, suggestions, onClose, channelId, meUid, meName }: { 
                 <FileButton variant="primary" compact pill onClick={send}>ابعت</FileButton>
             </div>
             {sendErr && <Caption>{sendErr}</Caption>}
-            <Caption>{real ? 'شات حقيقي على السيرفر: الطرف التاني بيشوف رسالتك في نفس اللحظة.' : 'شات تجريبي مع صاحب إعلان وهمي: رسايلك بتفضل على جهازك ومفيش حد بيشوفها.'}</Caption>
+            {real && <Caption>شات مباشر على السيرفر: الطرف التاني بيشوف رسالتك في نفس اللحظة.</Caption>}
         </div>
     </div>;
 }
@@ -330,11 +263,11 @@ function TrackingDialog({ title, onClose }: { title: string; onClose: () => void
                 <text x="150" y="120" textAnchor="middle" fontSize="12" fill="#a2a3c6">{title}</text>
             </svg>
             <Facts items={[
-                { label: 'آخر ظهور', value: 'من دقيقتين (تجريبي)' },
+                { label: 'آخر ظهور', value: 'من دقيقتين' },
                 { label: 'المكان التقريبي', value: '6 أكتوبر، الحصري' },
                 { label: 'طريقة التتبع', value: 'GPS أو AirTag جوه الجهاز' },
             ]} />
-            <Callout title="تتبع بموافقة المستأجر" tone="note">دي تجربة ببيانات وهمية. في النسخة الحقيقية المستأجر بيعرف قبل ما يأكد الطلب إن الجهاز فيه جهاز تتبع ضد السرقة وبيوافق عليه، والتتبع بيشتغل بس طول مدة الإيجار.</Callout>
+            <Callout title="تتبع بموافقة المستأجر" tone="note">المستأجر بيعرف قبل ما يأكد الطلب إن الجهاز فيه جهاز تتبع ضد السرقة وبيوافق عليه، والتتبع بيشتغل بس طول مدة الإيجار. البيانات المعروضة هنا توضيحية لحد ما أجهزة التتبع تشتغل فعليًا.</Callout>
         </div>
     </div>;
 }
@@ -343,16 +276,13 @@ function Avatar({ char, size }: { char: string; size?: number }) {
     return <span className="nexus-avatar" style={size ? { width: size, height: size, fontSize: size * 0.52 } : undefined} aria-hidden="true">{char}</span>;
 }
 
-function Home({ consoles, gear, onOpenConsole, onRequestGear, onChat }: { consoles: ConsoleListing[]; gear: GearItem[]; onOpenConsole: (l: ConsoleListing) => void; onRequestGear: (g: GearItem) => void; onChat: (name: string) => void }) {
+function Home({ consoles, onOpenConsole }: { consoles: ConsoleListing[]; onOpenConsole: (l: ConsoleListing) => void }) {
     const [filter, setFilter] = useState<{ cat: 'console' | 'controller' | 'game'; kind?: string; area?: 'زايد' | 'أكتوبر' } | null>(null);
     const [step, setStep] = useState<0 | 1 | 2 | null>(null);
     const [pickKind, setPickKind] = useState<string>('PS5');
-    const showConsoles = !filter || filter.cat === 'console';
-    const showGear = !filter || filter.cat !== 'console';
     const shownConsoles = consoles.filter(l => !filter || filter.cat !== 'console' || ((!filter.kind || l.kind === filter.kind) && (!filter.area || l.area === filter.area)));
-    const shownGear = gear.filter(g => !filter || filter.cat === 'console' || g.cat === filter.cat);
-    const filterLabel = !filter ? '' : filter.cat === 'controller' ? 'دراعات' : filter.cat === 'game' ? 'ألعاب' : `${filter.kind} · ${areaName(filter.area || 'زايد')}`;
-    const heading = filter ? `${showConsoles ? shownConsoles.length : shownGear.length} نتيجة` : `${consoles.length + gear.length} إعلان قريب منك`;
+    const filterLabel = !filter ? '' : `${filter.kind} · ${areaName(filter.area || 'زايد')}`;
+    const heading = filter ? `${shownConsoles.length} نتيجة` : consoles.length === 0 ? 'لسه مفيش إعلانات' : `${consoles.length} إعلان قريب منك`;
     const closeSheet = () => setStep(null);
     return <>
         <Group label="الإعلانات القريبة منك" heading={heading}>
@@ -360,16 +290,12 @@ function Home({ consoles, gear, onOpenConsole, onRequestGear, onChat }: { consol
                 <FileButton variant="secondary" compact pill onClick={() => setStep(0)}>فلتر</FileButton>
                 {filter && <button type="button" className="nexus-chip nexus-chip-btn" onClick={() => setFilter(null)}>× {filterLabel}</button>}
             </div>
-            {showConsoles && (shownConsoles.length === 0
-                ? <Callout title="مفيش أجهزة بالفلتر ده" tone="note">جرّب فلتر تاني، أو أضف جهازك أنت.</Callout>
-                : shownConsoles.map(l => <ConsoleCard key={l.id} listing={l} onOpen={() => onOpenConsole(l)} />))}
-            {showGear && <>
-                {showConsoles && <div className="nexus-subhead">دراعات وألعاب</div>}
-                {shownGear.length === 0
-                    ? <Callout title="مفيش إعلانات بالفلتر ده" tone="note">جرّب فلتر تاني.</Callout>
-                    : shownGear.map(g => <GearCard key={g.id} item={g} onRequest={() => onRequestGear(g)} onChat={() => onChat(g.owner)} />)}
-            </>}
-            <Caption>الإعلانات اللي عليها علامة «تجريبي» وهمية للتوضيح. أي إعلان تاني حقيقي من مستخدم زيك، منشور على السيرفر.</Caption>
+            {shownConsoles.length === 0
+                ? (filter
+                    ? <Callout title="مفيش أجهزة بالفلتر ده" tone="note">جرّب فلتر تاني، أو أضف جهازك أنت.</Callout>
+                    : <Callout title="لسه مفيش أجهزة منشورة" tone="note">كون أول واحد ينزل جهازه: دوس "أضف إعلانك" تحت.</Callout>)
+                : shownConsoles.map(l => <ConsoleCard key={l.id} listing={l} onOpen={() => onOpenConsole(l)} />)}
+            <Caption>كل الإعلانات هنا حقيقية من مستخدمين زيك، منشورة على السيرفر.</Caption>
         </Group>
         {step !== null && <div className="nexus-overlay" role="dialog" aria-modal="true" aria-label="فلتر الإعلانات" onClick={closeSheet}>
             <div className="nexus-sheet" onClick={e => e.stopPropagation()}>
@@ -379,8 +305,6 @@ function Home({ consoles, gear, onOpenConsole, onRequestGear, onChat }: { consol
                     <Paragraph>بتدور على إيه؟</Paragraph>
                     <div className="nexus-circles">
                         <button type="button" className="nexus-circle" onClick={() => setStep(1)}>أجهزة</button>
-                        <button type="button" className="nexus-circle" onClick={() => { setFilter({ cat: 'controller' }); closeSheet(); }}>دراعات</button>
-                        <button type="button" className="nexus-circle" onClick={() => { setFilter({ cat: 'game' }); closeSheet(); }}>ألعاب</button>
                     </div>
                 </div>}
                 {step === 1 && <div className="nexus-sheet-step" key="s1">
@@ -417,7 +341,7 @@ function GuideDialog({ onClose }: { onClose: () => void }) {
                 'كل جهاز فيه جهاز تتبع ضد السرقة، بتوافق عليه وانت بتطلب.',
                 'عند الإرجاع المندوب بيستلم الجهاز منك ويتشيك عليه ويشيل الـ AirTag ويرجعه للمالك. لو رجعت قبل المعاد، فرق الأيام بيرجعلك.',
             ]} />
-            <Caption>دي نسخة تجريبية ببيانات وهمية، مفيش حجز أو دفع حقيقي بيحصل.</Caption>
+            <Caption>الدفع كاش عند الاستلام مع المندوب، مفيش دفع إلكتروني جوه التطبيق.</Caption>
         </div>
     </div>;
 }
@@ -473,7 +397,7 @@ function TermsDialog({ onAccept, onClose }: { onAccept: () => void; onClose: () 
                 'الجهاز فيه جهاز تتبع ضد السرقة شغال طول مدة الإيجار، واستخدامه بيتم بعلمك.',
             ]} />
             <FileButton variant="primary" pill onClick={onAccept}>أوافق على الشروط</FileButton>
-            <Caption>عقد تجريبي للتوضيح بصياغة مبسطة، مش عقد قانوني حقيقي.</Caption>
+            <Caption>الشروط دي صياغة مبسطة للتوضيح، مش عقد قانوني.</Caption>
         </div>
     </div>;
 }
@@ -518,7 +442,7 @@ function ConsoleDetailPage({ listing, busy, onRequest, onChat }: { listing: Cons
             { label: 'السعر', value: `${listing.pricePerDay} ج.م في اليوم` },
             { label: 'التأمين بيرجع', value: `${listing.deposit} ج.م` },
         ]} />
-        <Caption>الأيام المتاحة للحجز (بيانات تجريبية):</Caption>
+        <Caption>الأيام المتاحة للحجز:</Caption>
         <AvailabilityCalendar busy={busy} fromMs={null} days={0} />
         <div className="nexus-card-actions">
             <Link className="file-button is-compact" data-variant="primary" to="/request" onClick={onRequest}>اطلب إيجار</Link>
@@ -657,7 +581,7 @@ function MapPage({ consoles, onRequest }: { consoles: ConsoleListing[]; onReques
     </Group>;
 }
 
-function RequestPage({ target, hasOpenRequest, busy, onConfirm }: { target: { title: string; owner: string; ownerLine: string; pricePerDay: number; deposit: number; number: number; deviceId?: string; ownerId?: string; demo?: boolean } | null; hasOpenRequest: boolean; busy: Set<number>; onConfirm: (r: { days: number; rent: number; deposit: number; fromMs: number; deliveryFee: number; promo: string; discount: number; payMethod: string }) => void }) {
+function RequestPage({ target, hasOpenRequest, busy, onConfirm }: { target: { title: string; owner: string; ownerLine: string; pricePerDay: number; deposit: number; number: number; deviceId?: string; ownerId?: string } | null; hasOpenRequest: boolean; busy: Set<number>; onConfirm: (r: { days: number; rent: number; deposit: number; fromMs: number; deliveryFee: number; promo: string; discount: number; payMethod: string }) => void }) {
     const [days, setDays] = useState(2);
     const [fromMs, setFromMs] = useState<number | null>(null);
     const [payMethod, setPayMethod] = useState('كاش عند الاستلام');
@@ -723,8 +647,7 @@ function RequestPage({ target, hasOpenRequest, busy, onConfirm }: { target: { ti
         </div>
         {promo && <Caption>كود {promo} اشتغل: خصم {Math.round((PROMO_CODES[promo] || 0) * 100)} في المية من الإيجار.</Caption>}
         {promoError && <Caption>{promoError}</Caption>}
-        <Caption>أكواد تجريبية للتجربة: NEXUS10 خصم 10 في المية، WELCOME15 خصم 15 في المية.</Caption>
-        <Facts items={[
+                <Facts items={[
             { label: 'الإيجار', value: `${rent} ج.م` },
             ...(discount ? [{ label: `خصم كود ${promo}`, value: `- ${discount} ج.م` }] : []),
             { label: 'التوصيل بالمندوب', value: `${DELIVERY_FEE} ج.م` },
@@ -1026,9 +949,9 @@ function ProfilePage({ profile, myUid, email, myOrders, incoming, myListings, or
             <Facts items={[
                 { label: 'إيجاراتك المكتملة', value: `${doneCount}` },
                 { label: 'مستواك', value: 'برونزي' },
-                { label: 'الباقي على فضي', value: 'إيجارين (تجريبي)' },
+                { label: 'الباقي على فضي', value: `${Math.max(0, 5 - doneCount)} إيجارات` },
             ]} />
-            <div className="nexus-progress" role="img" aria-label="وصلت لـ 60 في المية من الطريق للمستوى الفضي"><div style={{ width: '60%' }} /></div>
+            <div className="nexus-progress" role="img" aria-label="تقدمك ناحية المستوى الفضي"><div style={{ width: `${Math.min(100, (doneCount / 5) * 100)}%` }} /></div>
         </Group>
         {rentalOrder && <ActiveRental
             rental={{ title: rentalOrder.title, owner: rentalOrder.ownerName, ownerPhone: rentalOrder.ownerPhone || '', pricePerDay: rentalOrder.pricePerDay, days: rentalOrder.days, startMs: rentalOrder.deliveredAt || rentalOrder.createdMs, returned: rentalOrder.status === 'returning', channelId: rentalOrder.deviceId ? dmChannelId(rentalOrder.deviceId, myUid) : undefined }}
@@ -1095,7 +1018,7 @@ function ProfilePage({ profile, myUid, email, myOrders, incoming, myListings, or
                 <Row number={2} name="فضي" detail="خمس إيجارات مكتملة" value="خصم 5 في المية من العمولة" />
                 <Row number={3} name="دهبي" detail="خمستاشر إيجار مكتمل" value="خصم 10 في المية وأولوية ظهور" />
             </Rows>
-            <Caption>الطبقات لسه بتتفعّل، التقييمات تحت تجريبية للتوضيح.</Caption>
+            <Caption>التقييمات بتظهر بعد أول إيجار مكتمل.</Caption>
         </Group>
         <Group label="خدمة العملاء" heading>
             <Paragraph>عندك مشكلة أو سؤال؟ كلم الدعم في أي وقت، أو قدم شكوى رسمية والإدارة تراجعها.</Paragraph>
@@ -1163,7 +1086,7 @@ function AdminGateDialog({ step, onRole, onClose }: { step: 'password' | 'role';
                 <div className="nexus-card-actions">
                     <FileButton variant="primary" compact pill disabled={!pw.trim() || busy} onClick={submit}>{busy ? 'بنراجع...' : 'دخول'}</FileButton>
                 </div>
-                <Caption>بوابة تجريبية على قد النسخة دي. الحماية الحقيقية هتبقى على السيرفر.</Caption>
+                <Caption>البوابة دي حماية مبدئية على المتصفح. الحماية الكاملة هتبقى على السيرفر.</Caption>
             </> : <>
                 <h2 className="nexus-sheet-title">تدخل كإيه؟</h2>
                 <div className="nexus-circles">
@@ -1261,7 +1184,7 @@ function AdminPage({ users, complaints, orders, devices, onCloseComplaint, onDel
                 { label: 'أجهزة قيد الإيجار', value: `${rentedCount}` },
                 { label: 'شكاوى مفتوحة', value: `${openComplaints.length}` },
             ]} />
-            <Callout title="الأرقام دي حقيقية" tone="note">كل الأرقام والمستخدمين والطلبات هنا لايف من السيرفر، بتتحدث لحظة بلحظة. سجل الدخول تحت لسه تجريبي.</Callout>
+            <Callout title="الأرقام دي حقيقية" tone="note">كل الأرقام والمستخدمين والطلبات هنا لايف من السيرفر، بتتحدث لحظة بلحظة.</Callout>
         </Group>
         <Group label="المستخدمين" heading={`${users.length} مسجل`}>
             {users.map(u => <div key={u.id} className="nexus-card nexus-user-row" role="button" tabIndex={0} onClick={() => setSelected(u)} onKeyDown={e => { if (e.key === 'Enter') setSelected(u); }}>
@@ -1292,12 +1215,6 @@ function AdminPage({ users, complaints, orders, devices, onCloseComplaint, onDel
                     </div>
                 </div></div>;
             })}
-        </Group>
-        <Group label="سجل الدخول والخروج" heading>
-            <Rows>
-                {SEED_LOG.map((line, i) => <Row key={i} number={i + 1} name={line} detail="" value="" />)}
-            </Rows>
-            <Caption>السجل ده تجريبي للتوضيح لحد ما يتربط بالسيرفر في نسخة جاية.</Caption>
         </Group>
         {selected !== null && <div className="nexus-overlay" role="dialog" aria-modal="true" aria-label="بيانات المستخدم" onClick={() => setSelected(null)}>
             <div className="nexus-sheet" onClick={e => e.stopPropagation()}>
@@ -1377,7 +1294,7 @@ function AuthPage() {
         setBusy(false);
     };
     return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-        <Header title="NEXUS" fact="نسخة تجريبية 1.1" intro="وسيط بين اللي عنده بلايستيشن واللي عايز يلعب: اختار أقرب جهاز، والمندوب يوصله لحد بابك." />
+        <Header title="NEXUS" fact="نسخة 1.2" intro="وسيط بين اللي عنده بلايستيشن واللي عايز يلعب: اختار أقرب جهاز، والمندوب يوصله لحد بابك." />
         <Group label={mode === 'signup' ? 'حساب جديد' : 'تسجيل دخول'} heading={mode === 'signup' ? 'اعمل حسابك في دقيقة' : 'أهلًا برجوعك'}>
             <span className="nexus-idphoto-label">الإيميل</span>
             <input className="nexus-chat-input" dir="ltr" type="email" autoComplete="email" value={email} onChange={e => { setEmail(e.target.value); setErr(''); }} placeholder="name@gmail.com" aria-label="الإيميل" />
@@ -1399,7 +1316,7 @@ function withDefaults(l: any): ConsoleListing {
 }
 
 export function App() {
-    const [requestTarget, setRequestTarget] = useState<{ title: string; owner: string; ownerLine: string; pricePerDay: number; deposit: number; number: number; deviceId?: string; ownerId?: string; demo?: boolean } | null>(null);
+    const [requestTarget, setRequestTarget] = useState<{ title: string; owner: string; ownerLine: string; pricePerDay: number; deposit: number; number: number; deviceId?: string; ownerId?: string } | null>(null);
     const [chatWith, setChatWith] = useState<ChatTarget | null>(null);
     const [tracking, setTracking] = useState<ConsoleListing | null>(null);
     const [menuOpen, setMenuOpen] = useState(false);
@@ -1409,7 +1326,6 @@ export function App() {
     const [complaintOpen, setComplaintOpen] = useState(false);
     const [gateStep, setGateStep] = useState<'none' | 'password' | 'role'>('none');
     const [adminRole, setAdminRole] = useState<null | 'courier' | 'admin'>(null);
-    const [demoNote, setDemoNote] = useState(false);
     const [errNote, setErrNote] = useState('');
     const user = useAuthUser();
     const profileDoc = useProfile(user ? user.uid : undefined);
@@ -1429,7 +1345,6 @@ export function App() {
         if (q.get('shot_gate') === 'password') setGateStep('password');
         const ch = q.get('shot_chat');
         if (ch) setChatWith({ name: q.get('shot_chatname') || 'محادثة', channelId: ch });
-        if (q.get('shot_demo') === '1') setDemoNote(true);
         const sr = q.get('shot_role');
         if (sr === 'courier' || sr === 'admin') setAdminRole(sr);
     }, []);
@@ -1463,7 +1378,7 @@ export function App() {
         delivery: d.delivery, model: d.model, storage: d.storage, controllers: d.controllers, games: d.games, includes: d.includes,
         photoKey: d.photoKey, photoData: d.photoData, mine: d.ownerId === uid, status: d.status, createdAt: d.createdAt,
     }));
-    const consoles: ConsoleListing[] = [...SEED_CONSOLES.map(l => ({ ...l, demo: true })), ...realListings.filter(l => l.status !== 'rented')];
+    const consoles: ConsoleListing[] = realListings.filter(l => l.status !== 'rented');
     const myListings = realListings.filter(l => l.ownerId === uid);
     const myOrders = orders.filter(o => o.renterId === uid);
     const incoming = orders.filter(o => o.ownerId === uid && o.status === 'requested');
@@ -1472,10 +1387,8 @@ export function App() {
     const courierFeed = orders.filter(o => o.status === 'accepted' || (o.courierId === uid && [...ORDER_BUSY, 'returning' as OrderStatus].includes(o.status)));
 
     const requestConsole = (l: ConsoleListing) => {
-        if (l.demo || !l.ownerId) { setDemoNote(true); return; }
         setRequestTarget({ title: l.title, owner: l.owner, ownerLine: `${l.owner} · ${areaName(l.area)}، ${l.district}`, pricePerDay: l.pricePerDay, deposit: l.deposit, number: l.number, deviceId: l.id, ownerId: l.ownerId });
     };
-    const requestGear = () => setDemoNote(true);
 
     const ensureDm = (channelId: string) => {
         if (!user || !profile) return;
@@ -1557,18 +1470,18 @@ export function App() {
     const openSupport = () => setChatWith({ name: SUPPORT_NAME, suggestions: SUPPORT_SUGGESTIONS });
 
     const busyForTarget = requestTarget
-        ? busyDaysFor(consoles.find(c => c.id === requestTarget.deviceId) || ({ id: requestTarget.deviceId || '', number: requestTarget.number, demo: requestTarget.demo, ownerId: requestTarget.ownerId } as ConsoleListing), orders)
+        ? busyDaysFor(consoles.find(c => c.id === requestTarget.deviceId) || ({ id: requestTarget.deviceId || '', number: requestTarget.number, ownerId: requestTarget.ownerId } as ConsoleListing), orders)
         : new Set<number>();
 
     if (user === undefined || (user && profileDoc === undefined) || devices === undefined || ordersAll === undefined) {
         return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-            <Header title="NEXUS" fact="نسخة تجريبية 1.1" intro="ثواني وبنجهز حسابك من السيرفر..." />
+            <Header title="NEXUS" fact="نسخة 1.2" intro="ثواني وبنجهز حسابك من السيرفر..." />
         </div></FileCard>;
     }
     if (!user) return <AuthPage />;
     if (!profile) {
         return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-            <Header title="NEXUS" fact="نسخة تجريبية 1.1" intro="آخر خطوة: عرفنا بنفسك. بياناتك بتتحفظ على السيرفر بأمان، وصورتك وصورة بطاقتك للإدارة بس." />
+            <Header title="NEXUS" fact="نسخة 1.2" intro="آخر خطوة: عرفنا بنفسك. بياناتك بتتحفظ على السيرفر بأمان، وصورتك وصورة بطاقتك للإدارة بس." />
             <Group label="بياناتك" heading="معلوماتك الأساسية">
                 <ProfileForm initial={null} submitLabel="احفظ وابدأ" onSave={saveProfile} />
             </Group>
@@ -1581,12 +1494,12 @@ export function App() {
         </div>
         <div onPointerDown={lpStart} onPointerUp={lpCancel} onPointerMove={lpCancel} onPointerLeave={lpCancel} onPointerCancel={lpCancel}
             onContextMenu={e => { if ((e.target as HTMLElement).closest('.file-title')) e.preventDefault(); }}>
-            <Header title="NEXUS" fact="نسخة تجريبية 1.1" intro="وسيط بين اللي عنده بلايستيشن واللي عايز يلعب: اختار أقرب جهاز أو دراع أو لعبة، كلم صاحبها، وادفع كاش عند الاستلام." />
+            <Header title="NEXUS" fact="نسخة 1.2" intro="وسيط بين اللي عنده بلايستيشن واللي عايز يلعب: اختار أقرب جهاز أو دراع أو لعبة، كلم صاحبها، وادفع كاش عند الاستلام." />
         </div>
-        <Callout title="النسخة دي متصلة بسيرفر حقيقي" tone="warning">الإعلانات اللي عليها علامة «تجريبي» وهمية للتوضيح. باقي الإعلانات والطلبات والشات حقيقي وبيتحفظ على السيرفر، والدفع كاش عند الاستلام مع المندوب.</Callout>
+        <Callout title="متصل بسيرفر حقيقي" tone="note">الإعلانات والطلبات والشات حقيقية وبتتحفظ على السيرفر لحظة بلحظة، والدفع كاش عند الاستلام مع المندوب.</Callout>
         <Drawer open={menuOpen} profile={profile} myCount={myListings.length} email={user.email || ''} onClose={() => setMenuOpen(false)} onGuide={() => setGuideOpen(true)} onSupport={openSupport} onSignOut={() => { fbSignOut().catch(() => {}); }} />
         <Routes>
-            <Route path="/" element={<Home consoles={consoles} gear={SEED_GEAR} onOpenConsole={setDetail} onRequestGear={requestGear} onChat={(n) => setChatWith({ name: n })} />} />
+            <Route path="/" element={<Home consoles={consoles} onOpenConsole={setDetail} />} />
             <Route path="/map" element={<MapPage consoles={consoles} onRequest={requestConsole} />} />
             <Route path="/add" element={<AddPage onAdd={addListing} blocked={!!rentalOrder} profile={profile} />} />
             <Route path="/admin" element={adminRole === 'courier'
@@ -1601,7 +1514,7 @@ export function App() {
                         <div className="nexus-card-actions"><FileButton variant="ghost" compact onClick={() => { setAdminRole(null); window.location.hash = '/'; }}>خروج من لوحة الإدارة</FileButton></div>
                     </>
                     : <Group label="الصفحة دي مش موجودة" heading="اتوجهت غلط"><Callout title="مفيش حاجة هنا" tone="note">الصفحة دي مش متاحة. ارجع للإعلانات.</Callout><Link className="file-button is-compact" data-variant="secondary" to="/">ارجع للإعلانات</Link></Group>} />
-            <Route path="/detail" element={<ConsoleDetailPage listing={detail} busy={busyDaysFor(detail, orders)} onRequest={() => detail && requestConsole(detail)} onChat={() => detail && (detail.demo || !detail.ownerId ? setChatWith({ name: detail.owner }) : openDmFor(detail))} />} />
+            <Route path="/detail" element={<ConsoleDetailPage listing={detail} busy={busyDaysFor(detail, orders)} onRequest={() => detail && requestConsole(detail)} onChat={() => detail && openDmFor(detail)} />} />
             <Route path="/order" element={<OrderPage order={currentOrder} onHandoverCheck={(v) => currentOrder && run(fbUpdateOrder(currentOrder.id, { handoverCheck: v }), 'ماتحفظتش. جرب تاني.')} onChat={handleChat} />} />
             <Route path="/request" element={<RequestPage target={requestTarget} hasOpenRequest={myOrders.some(o => o.status === 'requested')} busy={busyForTarget} onConfirm={confirmRequest} />} />
             <Route path="/profile" element={<ProfilePage profile={profile} myUid={uid} email={user.email || ''} myOrders={myOrders} incoming={incoming} myListings={myListings} orders={orders} rentalOrder={rentalOrder} chats={chats || []}
@@ -1621,14 +1534,6 @@ export function App() {
         {gateStep !== 'none' && <AdminGateDialog step={gateStep} onRole={pickRole} onClose={() => setGateStep('none')} />}
         {chatWith && <ChatDialog name={chatWith.name} suggestions={chatWith.suggestions} channelId={chatWith.channelId} meUid={uid} meName={profile.name} onClose={() => setChatWith(null)} />}
         {tracking && <TrackingDialog title={tracking.title} onClose={() => setTracking(null)} />}
-        {demoNote && <div className="nexus-overlay" role="dialog" aria-modal="true" aria-label="إعلان توضيحي">
-            <div className="nexus-sheet">
-                <div className="nexus-sheet-close"><CloseButton label="إغلاق" onClick={() => setDemoNote(false)} /></div>
-                <h2 className="nexus-sheet-title">إعلان توضيحي بس</h2>
-                <Paragraph>الإعلان ده وهمي للتوضيح، صاحبه مش موجود فعلًا فمفيش طلب حقيقي هيتبعت. جرب تطلب جهاز حقيقي من إعلانات المستخدمين، أو انزل جهازك من "أضف إعلانك".</Paragraph>
-                <FileButton variant="primary" pill onClick={() => setDemoNote(false)}>تمام</FileButton>
-            </div>
-        </div>}
         {editProfile && <div className="nexus-overlay" role="dialog" aria-modal="true" aria-label="تعديل بياناتك">
             <div className="nexus-sheet">
                 <div className="nexus-sheet-close"><CloseButton label="إغلاق" onClick={() => setEditProfile(false)} /></div>
@@ -1638,7 +1543,7 @@ export function App() {
         </div>}
         {errNote && <Callout title="حصلت مشكلة" tone="danger">{errNote}</Callout>}
         <Caption>صور الأجهزة: بلايستيشن 5 بواسطة Soberian وبلايستيشن 4 بواسطة Evan-Amos والدراع بواسطة Viper polo، عبر ويكيميديا كومنز. أغلفة الألعاب رسوم توضيحية.</Caption>
-        <Closing>نسخة تجريبية 1.1 متصلة بسيرفر Firebase حقيقي. اتعملت 27 نوفمبر 2026.</Closing>
+        <Closing>نسخة 1.2، متصلة بسيرفر Firebase حقيقي.</Closing>
         </div>
     </FileCard>;
 }
