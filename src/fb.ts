@@ -7,7 +7,7 @@ import {
     type User,
 } from 'firebase/auth';
 import {
-    collection, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy,
+    collection, doc, setDoc, getDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 
@@ -25,9 +25,14 @@ export type DeviceDoc = {
     pricePerDay: number; deposit: number; rating: number; reviews: number; delivery: boolean;
     model: string; storage: string; controllers: number; games: string[]; includes: string;
     photoKey?: string; photoData?: string;
+    // lat/lng على الدوكيومنت العام دي النسخة المموّهة (~٣٥٠م). المكان الدقيق في devices/{id}/private/exact
+    // ومبيقراهوش غير المالك والمندوب المكلف (قواعد الفايرستور).
     lat?: number; lng?: number;
+    activeCourierId?: string;
     status: 'open' | 'rented'; createdAt: number;
 };
+
+export type ExactLoc = { lat: number; lng: number };
 
 export type OrderStatus = 'requested' | 'accepted' | 'taken' | 'pickedup' | 'arrived' | 'delivered' | 'returning' | 'returned' | 'declined';
 
@@ -119,8 +124,32 @@ export function useDevices(): DeviceDoc[] | undefined {
     return list;
 }
 
-export async function fbAddDevice(d: Omit<DeviceDoc, 'id'>) {
-    await addDoc(collection(db, 'devices'), d);
+export async function fbAddDevice(d: Omit<DeviceDoc, 'id'>, exact: ExactLoc): Promise<string> {
+    const ref = await addDoc(collection(db, 'devices'), d);
+    await setDoc(doc(db, 'devices', ref.id, 'private', 'exact'), exact);
+    return ref.id;
+}
+
+// المكان الدقيق للأجهزة اللي ليك عليها حق (مالك أو مندوب مكلف) — بيقره من المجموعة الخاصة بس
+export function useExactLocations(devices: DeviceDoc[] | undefined, uid: string): Record<string, ExactLoc> {
+    const [exact, setExact] = useState<Record<string, ExactLoc>>({});
+    useEffect(() => {
+        if (!devices) return;
+        const wanted = devices.filter(d => d.ownerId === uid || d.activeCourierId === uid);
+        let alive = true;
+        (async () => {
+            const out: Record<string, ExactLoc> = {};
+            for (const d of wanted) {
+                try {
+                    const s = await getDoc(doc(db, 'devices', d.id, 'private', 'exact'));
+                    if (s.exists()) out[d.id] = s.data() as ExactLoc;
+                } catch { /* مش ليك حق عليه — سيبه مموّه */ }
+            }
+            if (alive) setExact(out);
+        })();
+        return () => { alive = false; };
+    }, [devices, uid]);
+    return exact;
 }
 
 export async function fbUpdateDevice(id: string, patch: Partial<DeviceDoc>) {

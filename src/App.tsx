@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import {
     useAuthUser, useProfile, useDevices, useOrders, useMyChats, useMessages, useComplaints, useAllUsers,
-    fbSignUp, fbSignIn, fbSignOut, fbSaveProfile, fbAddDevice, fbUpdateDevice, fbDeleteDevice,
+    fbSignUp, fbSignIn, fbSignOut, fbSaveProfile, fbAddDevice, fbUpdateDevice, fbDeleteDevice, useExactLocations,
     fbCreateOrder, fbUpdateOrder, fbDeleteOrder, fbOpenChat, fbSendMessage, fbAddComplaint, fbCloseComplaint, fbDeleteUser,
     authErrorAr, dmChannelId, orderChannelId, ORDER_BUSY,
     type DeviceDoc, type OrderDoc, type OrderStatus, type ChatDoc, type ProfileDoc, type AdminUserDoc, type ComplaintDoc,
@@ -496,7 +496,7 @@ function BottomNav({ onGuide }: { onGuide: () => void }) {
     </nav>;
 }
 
-function MapPage({ consoles, onRequest, exactIds }: { consoles: ConsoleListing[]; onRequest: (l: ConsoleListing) => void; exactIds: string[] }) {
+function MapPage({ consoles, onRequest, exactLoc }: { consoles: ConsoleListing[]; onRequest: (l: ConsoleListing) => void; exactLoc: Record<string, LatLng> }) {
     const [selected, setSelected] = useState<number | null>(null);
     const [locNote, setLocNote] = useState('');
     const [locating, setLocating] = useState(false);
@@ -506,17 +506,10 @@ function MapPage({ consoles, onRequest, exactIds }: { consoles: ConsoleListing[]
     const meRef = useRef<L.CircleMarker | null>(null);
     const meAccRef = useRef<L.Circle | null>(null);
 
-    // مكان حقيقي محفوظ مع الإعلان: يظهر دقيق للمالك والمندوب فقط، ومموّه داخل دايرة ~٣٥٠م لباقي الناس
-    const exactSet = new Set(exactIds);
+    // الإحداثيات العامة مموّهة أصلًا (~٣٥٠م). الدقيق بيجيلو من المجموعة الخاصة للمالك والمندوب المكلف بس
     const posFor = (l: ConsoleListing): { pos: [number, number]; exact: boolean } => {
-        if (typeof l.lat === 'number' && typeof l.lng === 'number') {
-            if (exactSet.has(l.id)) return { pos: [l.lat, l.lng], exact: true };
-            let h = 0;
-            for (let i = 0; i < l.id.length; i++) h = (h * 31 + l.id.charCodeAt(i)) >>> 0;
-            const ang = (h % 360) * Math.PI / 180;
-            const r = 0.002 + (((h >> 8) % 100) / 100) * 0.0015;
-            return { pos: [l.lat + r * Math.sin(ang), l.lng + r * Math.cos(ang)], exact: false };
-        }
+        if (exactLoc[l.id]) return { pos: [exactLoc[l.id].lat, exactLoc[l.id].lng], exact: true };
+        if (typeof l.lat === 'number' && typeof l.lng === 'number') return { pos: [l.lat, l.lng], exact: false };
         const base = AREA_CENTER[l.area] || AREA_CENTER['زايد'];
         const j = l.number * 7919;
         const dx = ((j % 100) / 100 - 0.5) * 0.05;
@@ -560,7 +553,7 @@ function MapPage({ consoles, onRequest, exactIds }: { consoles: ConsoleListing[]
         group.addTo(map);
         groupRef.current = group;
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [consoles, selected, exactIds.join(',')]);
+    }, [consoles, selected, exactLoc]);
 
     const showMyLocation = () => {
         setLocNote('');
@@ -604,7 +597,7 @@ function MapPage({ consoles, onRequest, exactIds }: { consoles: ConsoleListing[]
     const current = consoles.find(l => l.number === selected);
     return <Group label="الخريطة" heading="الأجهزة حوالينك">
         <div ref={mapDivRef} className="nexus-map-real" role="application" aria-label="خريطة أماكن الأجهزة في الشيخ زايد و6 أكتوبر" />
-        <Caption>خريطة حقيقية من OpenStreetMap. دوس على رقم تشوف تفاصيله. مكان كل جهاز حقيقي بس بيظهر تقريبي جوه دايرة حوالي ٣٥٠ متر حماية لخصوصية المالك — المكان الدقيق بيظهر للمالك نفسه وللمندوب وقت الاستلام بس.</Caption>
+        <Caption>خريطة حقيقية من OpenStreetMap. دوس على رقم تشوف تفاصيله. مكان كل جهاز بيظهر تقريبي جوه دايرة حوالي ٣٥٠ متر — المكان الدقيق محفوظ لوحده على السيرفر، وحدش يقدر يشوفه غير المالك نفسه والمندوب وقت الاستلام.</Caption>
         <FileButton variant="secondary" compact pill onClick={showMyLocation} disabled={locating}>{locating ? 'بنحدد مكانك...' : 'أظهر مكاني على الخريطة'}</FileButton>
         {locNote && <Caption>{locNote}</Caption>}
         {current
@@ -825,7 +818,7 @@ function AddPage({ onAdd, blocked, profile }: { onAdd: (l: { kind: 'PS5' | 'PS4'
             </div>
             {locNote && <Caption>{locNote}</Caption>}
             {loc && <Caption>المكان اتحفظ. تقدر تحرك الدبوس بيدك لو عايز تظبطه.</Caption>}
-            <Callout title="مكانك الدقيق في أمان" tone="note">اللي بيتصفح التطبيق بيشوف دايرة تقريبية بقطر ٣٥٠ متر حوالين المكان الحقيقي، مش بيتك بالظبط. المكان الدقيق بيظهر ليك انت وللمندوب بس وقت الاستلام.</Callout>
+            <Callout title="مكانك الدقيق في أمان" tone="note">اللي بيتصفح التطبيق بيشوف دايرة تقريبية بقطر ٣٥٠ متر حوالين المكان الحقيقي. المكان الدقيق بيتخزن لوحده على السيرفر، وقواعد السيرفر نفسها بتمنع حد غيرك (وغير المندوب وقت الاستلام) يقراه.</Callout>
             <TextField label="سعر اليوم بالجنيه (اكتب الرقم)" value={price} onChange={(v: string) => setPrice(v)} />
             <Callout title="عمولة التطبيق 20 في المية" tone="note">التطبيق بياخد عمولة 20 في المية من سعر الإيجار بس، مش من التأمين. التأمين كله بيرجع للمستأجر.</Callout>
             {(() => { const pv = parseInt(price, 10); if (!Number.isFinite(pv) || pv <= 0) return null; const fee = Math.round(pv * COMMISSION); return <Callout title="احسبها على السعر اللي كتبته" tone="note">لو اليوم بـ {pv} ج.م: عمولة التطبيق {fee} ج.م عن كل يوم، وصافيلك {pv - fee} ج.م في اليوم. يعني لو اتأجر 3 أيام، صافيك {3 * (pv - fee)} ج.م من أصل {3 * pv} ج.م.</Callout>; })()}
@@ -1191,8 +1184,8 @@ function AdminGateDialog({ step, onRole, onClose }: { step: 'password' | 'role';
     </div>;
 }
 
-function CourierPanel({ feed, myUid, myName, devices, onTake, onPickedUp, onArrived, onDeliver, onReturnDone, onChat, onExit }: {
-    feed: OrderDoc[]; myUid: string; myName: string; devices: DeviceDoc[];
+function CourierPanel({ feed, myUid, myName, exactLoc, onTake, onPickedUp, onArrived, onDeliver, onReturnDone, onChat, onExit }: {
+    feed: OrderDoc[]; myUid: string; myName: string; exactLoc: Record<string, LatLng>;
     onTake: (o: OrderDoc) => void; onPickedUp: (o: OrderDoc) => void; onArrived: (o: OrderDoc) => void;
     onDeliver: (o: OrderDoc) => void; onReturnDone: (o: OrderDoc) => void;
     onChat: (name: string, suggestions: string[], channelId: string) => void; onExit: () => void;
@@ -1217,14 +1210,10 @@ function CourierPanel({ feed, myUid, myName, devices, onTake, onPickedUp, onArri
                 <div className="nexus-muted">المستأجر: {o.renterName}{o.renterPhone ? <> · <bdi>{o.renterPhone}</bdi></> : null}</div>
                 <div className="nexus-muted">{yom(o.days)} · المطلوب عند الاستلام {o.rent + o.deposit + (o.deliveryFee || 0) - (o.discount || 0)} ج.م</div>
                 <div className="nexus-status-line"><span className="nexus-dot nexus-dot-pink" />{statusAr(o.status)}</div>
-                {o.courierId === myUid && (o.status === 'taken' || o.status === 'returning') && (() => {
-                    const dv = devices.find(d => d.id === o.deviceId);
-                    if (!dv || typeof dv.lat !== 'number' || typeof dv.lng !== 'number') return null;
-                    return <>
-                        <a className="file-button is-compact" data-variant="secondary" href={`https://www.google.com/maps?q=${dv.lat},${dv.lng}`} target="_blank" rel="noreferrer">افتح مكان المالك الدقيق في الخريطة</a>
-                        <Caption>المكان الدقيق ده للمندوب بس، متشاركوش مع حد تاني.</Caption>
-                    </>;
-                })()}
+                {o.courierId === myUid && (o.status === 'taken' || o.status === 'returning') && o.deviceId && exactLoc[o.deviceId] && <>
+                    <a className="file-button is-compact" data-variant="secondary" href={`https://www.google.com/maps?q=${exactLoc[o.deviceId].lat},${exactLoc[o.deviceId].lng}`} target="_blank" rel="noreferrer">افتح مكان المالك الدقيق في الخريطة</a>
+                    <Caption>المكان الدقيق ده للمندوب بس، متشاركوش مع حد تاني.</Caption>
+                </>}
                 {o.status === 'accepted' && <div className="nexus-card-actions">
                     <FileButton variant="primary" compact pill onClick={() => onTake(o)}>استلم الطلب ده</FileButton>
                 </div>}
@@ -1394,7 +1383,7 @@ function AuthPage() {
         setBusy(false);
     };
     return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-        <Header title="NEXUS" fact="نسخة 1.3" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، والمندوب يوصله لحد بابك." />
+        <Header title="NEXUS" fact="نسخة 1.4" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، والمندوب يوصله لحد بابك." />
         <Group label={mode === 'signup' ? 'حساب جديد' : 'تسجيل دخول'} heading={mode === 'signup' ? 'اعمل حسابك في دقيقة' : 'أهلًا برجوعك'}>
             <span className="nexus-idphoto-label">الإيميل</span>
             <input className="nexus-chat-input" dir="ltr" type="email" autoComplete="email" value={email} onChange={e => { setEmail(e.target.value); setErr(''); }} placeholder="name@gmail.com" aria-label="الإيميل" />
@@ -1486,10 +1475,7 @@ export function App() {
     const currentOrder = myOrders.find(o => ['accepted', 'taken', 'pickedup', 'arrived'].includes(o.status)) || null;
     const rentalOrder = myOrders.find(o => o.status === 'delivered' || o.status === 'returning') || null;
     const courierFeed = orders.filter(o => o.status === 'accepted' || (o.courierId === uid && [...ORDER_BUSY, 'returning' as OrderStatus].includes(o.status)));
-    const exactMapIds = [
-        ...myListings.map(l => l.id),
-        ...orders.filter(o => o.courierId === uid && [...ORDER_BUSY, 'returning' as OrderStatus].includes(o.status)).map(o => o.deviceId || ''),
-    ].filter(Boolean);
+    const exactLoc = useExactLocations(devList, uid);
 
     const requestConsole = (l: ConsoleListing) => {
         setRequestTarget({ title: l.title, owner: l.owner, ownerLine: `${l.owner} · ${areaName(l.area)}، ${l.district}`, pricePerDay: l.pricePerDay, deposit: l.deposit, number: l.number, deviceId: l.id, ownerId: l.ownerId });
@@ -1528,13 +1514,18 @@ export function App() {
 
     const addListing = (data: { kind: 'PS5' | 'PS4' | 'Xbox'; model: string; storage: string; controllers: number; area: 'زايد' | 'أكتوبر'; district: string; games: string[]; includes: string; pricePerDay: number; deposit: number; photoKey?: string; photoData?: string; lat: number; lng: number }) => {
         if (!user || !profile) return;
+        const ang = Math.random() * 2 * Math.PI;
+        const r = 0.0022 + Math.random() * 0.0014;
+        const fuzzLoc: [number, number] = [r * Math.sin(ang), r * Math.cos(ang)];
         run(fbAddDevice({
             kind: data.kind, title: `${KIND_TITLE[data.kind] || data.kind} ${data.model}`,
             ownerId: uid, ownerName: profile.name, area: data.area, district: data.district,
             pricePerDay: data.pricePerDay, deposit: data.deposit, rating: 0, reviews: 0, delivery: true,
             model: data.model, storage: data.storage, controllers: data.controllers, games: data.games, includes: data.includes,
-            photoKey: data.photoKey, photoData: data.photoData, lat: data.lat, lng: data.lng, status: 'open', createdAt: Date.now(),
-        }), 'الإعلان ماتنشرش. اتأكد من النت وجرب تاني.');
+            photoKey: data.photoKey, photoData: data.photoData,
+            // النسخة العامة مموّهة: إزاحة عشوائية ٢٥٠-٤٠٠ متر من النقطة الحقيقية. الدقيق بيتخزن منفصل وخاص.
+            lat: data.lat + fuzzLoc[0], lng: data.lng + fuzzLoc[1], status: 'open', createdAt: Date.now(),
+        }, { lat: data.lat, lng: data.lng }), 'الإعلان ماتنشرش. اتأكد من النت وجرب تاني.');
     };
     const confirmRequest = (r: { days: number; rent: number; deposit: number; fromMs: number; deliveryFee: number; promo: string; discount: number; payMethod: string }) => {
         if (!requestTarget || !user || !profile || !requestTarget.deviceId || !requestTarget.ownerId) return;
@@ -1551,17 +1542,20 @@ export function App() {
         if (!profile) return;
         run(fbUpdateOrder(o.id, ok ? { status: 'accepted', ownerPhone: profile.phone } : { status: 'declined' }), 'الرد ماتسجلش. جرب تاني.');
     };
-    const courierTake = (o: OrderDoc) => profile && run(fbUpdateOrder(o.id, { status: 'taken', courierId: uid, courierName: profile.name }), 'ماتسجلش. جرب تاني.');
+    const courierTake = (o: OrderDoc) => {
+        profile && run(fbUpdateOrder(o.id, { status: 'taken', courierId: uid, courierName: profile.name }), 'ماتسجلش. جرب تاني.');
+        if (o.deviceId) run(fbUpdateDevice(o.deviceId, { activeCourierId: uid }), '');
+    };
     const courierPickedUp = (o: OrderDoc) => run(fbUpdateOrder(o.id, { status: 'pickedup' }), 'ماتسجلش. جرب تاني.');
     const courierArrived = (o: OrderDoc) => run(fbUpdateOrder(o.id, { status: 'arrived' }), 'ماتسجلش. جرب تاني.');
     const courierDeliver = (o: OrderDoc) => {
         run(fbUpdateOrder(o.id, { status: 'delivered', deliveredAt: Date.now() }), 'ماتسجلش. جرب تاني.');
-        if (o.deviceId) run(fbUpdateDevice(o.deviceId, { status: 'rented' }), '');
+        if (o.deviceId) run(fbUpdateDevice(o.deviceId, { status: 'rented', activeCourierId: '' }), '');
     };
     const renterReturn = () => { if (rentalOrder) run(fbUpdateOrder(rentalOrder.id, { status: 'returning' }), 'ماتسجلش. جرب تاني.'); };
     const courierReturnDone = (o: OrderDoc) => {
         run(fbUpdateOrder(o.id, { status: 'returned' }), 'ماتسجلش. جرب تاني.');
-        if (o.deviceId) run(fbUpdateDevice(o.deviceId, { status: 'open' }), '');
+        if (o.deviceId) run(fbUpdateDevice(o.deviceId, { status: 'open', activeCourierId: '' }), '');
     };
     const saveProfile = (p: UserProfile) => {
         if (!user) return;
@@ -1580,13 +1574,13 @@ export function App() {
 
     if (user === undefined || (user && profileDoc === undefined) || devices === undefined || ordersAll === undefined) {
         return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-            <Header title="NEXUS" fact="نسخة 1.3" intro="ثواني وبنجهز حسابك من السيرفر..." />
+            <Header title="NEXUS" fact="نسخة 1.4" intro="ثواني وبنجهز حسابك من السيرفر..." />
         </div></FileCard>;
     }
     if (!user) return <AuthPage />;
     if (!profile) {
         return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-            <Header title="NEXUS" fact="نسخة 1.3" intro="آخر خطوة: عرفنا بنفسك. بياناتك بتتحفظ على السيرفر بأمان، وصورتك وصورة بطاقتك للإدارة بس." />
+            <Header title="NEXUS" fact="نسخة 1.4" intro="آخر خطوة: عرفنا بنفسك. بياناتك بتتحفظ على السيرفر بأمان، وصورتك وصورة بطاقتك للإدارة بس." />
             <Group label="بياناتك" heading="معلوماتك الأساسية">
                 <ProfileForm initial={null} submitLabel="احفظ وابدأ" onSave={saveProfile} />
             </Group>
@@ -1599,16 +1593,16 @@ export function App() {
         </div>
         <div onPointerDown={lpStart} onPointerUp={lpCancel} onPointerMove={lpCancel} onPointerLeave={lpCancel} onPointerCancel={lpCancel}
             onContextMenu={e => { if ((e.target as HTMLElement).closest('.file-title')) e.preventDefault(); }}>
-            <Header title="NEXUS" fact="نسخة 1.3" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، كلم صاحبها، وادفع كاش عند الاستلام." />
+            <Header title="NEXUS" fact="نسخة 1.4" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، كلم صاحبها، وادفع كاش عند الاستلام." />
         </div>
         <Callout title="متصل بسيرفر حقيقي" tone="note">الإعلانات والطلبات والشات حقيقية وبتتحفظ على السيرفر لحظة بلحظة، والدفع كاش عند الاستلام مع المندوب.</Callout>
         <Drawer open={menuOpen} profile={profile} myCount={myListings.length} email={user.email || ''} onClose={() => setMenuOpen(false)} onGuide={() => setGuideOpen(true)} onSupport={openSupport} onSignOut={() => { fbSignOut().catch(() => {}); }} />
         <Routes>
             <Route path="/" element={<Home consoles={consoles} onOpenConsole={setDetail} />} />
-            <Route path="/map" element={<MapPage consoles={consoles} onRequest={requestConsole} exactIds={exactMapIds} />} />
+            <Route path="/map" element={<MapPage consoles={consoles} onRequest={requestConsole} exactLoc={exactLoc} />} />
             <Route path="/add" element={<AddPage onAdd={addListing} blocked={!!rentalOrder} profile={profile} />} />
             <Route path="/admin" element={adminRole === 'courier'
-                ? <CourierPanel feed={courierFeed} myUid={uid} myName={profile.name} devices={devList}
+                ? <CourierPanel feed={courierFeed} myUid={uid} myName={profile.name} exactLoc={exactLoc}
                     onTake={courierTake} onPickedUp={courierPickedUp} onArrived={courierArrived} onDeliver={courierDeliver} onReturnDone={courierReturnDone}
                     onChat={(n, s, ch) => handleChat(n, s, ch)} onExit={() => { setAdminRole(null); window.location.hash = '/'; }} />
                 : adminRole === 'admin'
@@ -1648,7 +1642,7 @@ export function App() {
         </div>}
         {errNote && <Callout title="حصلت مشكلة" tone="danger">{errNote}</Callout>}
         <Caption>صور الأجهزة: بلايستيشن 5 بواسطة Soberian وبلايستيشن 4 بواسطة Evan-Amos ودراع بلايستيشن بواسطة Viper polo وإكس بوكس سيريس إكس بواسطة epredator ودراع إكس بوكس بواسطة UKER، عبر ويكيميديا كومنز. أغلفة الألعاب رسوم توضيحية.</Caption>
-        <Closing>نسخة 1.3، متصلة بسيرفر Firebase حقيقي.</Closing>
+        <Closing>نسخة 1.4، متصلة بسيرفر Firebase حقيقي.</Closing>
         </div>
     </FileCard>;
 }

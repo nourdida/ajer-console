@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isAdmin() { return signedIn() && request.auth.token.email == 'jokerkaled14@gmail.com'; }
+    function deviceData(id) { return get(/databases/$(database)/documents/devices/$(id)).data; }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow create, update: if signedIn() && request.auth.uid == uid;
+      allow delete: if isAdmin();
+    }
+
+    match /devices/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn();
+      allow delete: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+
+      match /private/{doc} {
+        allow read: if signedIn() && (deviceData(id).ownerId == request.auth.uid || deviceData(id).get('activeCourierId', '') == request.auth.uid || isAdmin());
+        allow write: if signedIn() && (deviceData(id).ownerId == request.auth.uid || isAdmin());
+      }
+    }
+
+    match /orders/{id} {
+      allow read, create, update: if signedIn();
+      allow delete: if signedIn() && (resource.data.renterId == request.auth.uid || isAdmin());
+    }
+
+    match /chats/{id} {
+      allow read, create, update: if signedIn();
+      match /messages/{mid} {
+        allow read, create: if signedIn();
+      }
+    }
+
+    match /complaints/{id} {
+      allow create: if signedIn();
+      allow read, update: if isAdmin();
+    }
+  }
+}
