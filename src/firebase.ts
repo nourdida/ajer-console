@@ -2,7 +2,7 @@
 // القيم دي مش سرية: دي عنوان المشروع بس، والأمان الحقيقي في قوانين Firestore (Rules).
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
     apiKey: 'AIzaSyCe88mPhC6eM0ydU8umlhJi46fbnKyYWXM',
@@ -15,4 +15,5 @@ const firebaseConfig = {
 
 export const fbApp = initializeApp(firebaseConfig);
 export const auth = getAuth(fbApp);
-export const db = getFirestore(fbApp);
+// تجاهل الحقول الفاضية (undefined) بدل ما الكتابة تفشل: الحقول الاختيارية زي صورة الجهاز ممكن تبقى فاضية.
+export const db = initializeFirestore(fbApp, { ignoreUndefinedProperties: true });
