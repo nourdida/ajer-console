@@ -1383,7 +1383,7 @@ function AuthPage() {
         setBusy(false);
     };
     return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-        <Header title="NEXUS" fact="نسخة 1.4" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، والمندوب يوصله لحد بابك." />
+        <Header title="NEXUS" fact="نسخة 1.5" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، والمندوب يوصله لحد بابك." />
         <Group label={mode === 'signup' ? 'حساب جديد' : 'تسجيل دخول'} heading={mode === 'signup' ? 'اعمل حسابك في دقيقة' : 'أهلًا برجوعك'}>
             <span className="nexus-idphoto-label">الإيميل</span>
             <input className="nexus-chat-input" dir="ltr" type="email" autoComplete="email" value={email} onChange={e => { setEmail(e.target.value); setErr(''); }} placeholder="name@gmail.com" aria-label="الإيميل" />
@@ -1574,13 +1574,13 @@ export function App() {
 
     if (user === undefined || (user && profileDoc === undefined) || devices === undefined || ordersAll === undefined) {
         return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-            <Header title="NEXUS" fact="نسخة 1.4" intro="ثواني وبنجهز حسابك من السيرفر..." />
+            <Header title="NEXUS" fact="نسخة 1.5" intro="ثواني وبنجهز حسابك من السيرفر..." />
         </div></FileCard>;
     }
     if (!user) return <AuthPage />;
     if (!profile) {
         return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-            <Header title="NEXUS" fact="نسخة 1.4" intro="آخر خطوة: عرفنا بنفسك. بياناتك بتتحفظ على السيرفر بأمان، وصورتك وصورة بطاقتك للإدارة بس." />
+            <Header title="NEXUS" fact="نسخة 1.5" intro="آخر خطوة: عرفنا بنفسك. بياناتك بتتحفظ على السيرفر بأمان، وصورتك وصورة بطاقتك للإدارة بس." />
             <Group label="بياناتك" heading="معلوماتك الأساسية">
                 <ProfileForm initial={null} submitLabel="احفظ وابدأ" onSave={saveProfile} />
             </Group>
@@ -1593,7 +1593,7 @@ export function App() {
         </div>
         <div onPointerDown={lpStart} onPointerUp={lpCancel} onPointerMove={lpCancel} onPointerLeave={lpCancel} onPointerCancel={lpCancel}
             onContextMenu={e => { if ((e.target as HTMLElement).closest('.file-title')) e.preventDefault(); }}>
-            <Header title="NEXUS" fact="نسخة 1.4" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، كلم صاحبها، وادفع كاش عند الاستلام." />
+            <Header title="NEXUS" fact="نسخة 1.5" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، كلم صاحبها، وادفع كاش عند الاستلام." />
         </div>
         <Callout title="متصل بسيرفر حقيقي" tone="note">الإعلانات والطلبات والشات حقيقية وبتتحفظ على السيرفر لحظة بلحظة، والدفع كاش عند الاستلام مع المندوب.</Callout>
         <Drawer open={menuOpen} profile={profile} myCount={myListings.length} email={user.email || ''} onClose={() => setMenuOpen(false)} onGuide={() => setGuideOpen(true)} onSupport={openSupport} onSignOut={() => { fbSignOut().catch(() => {}); }} />
@@ -1642,7 +1642,7 @@ export function App() {
         </div>}
         {errNote && <Callout title="حصلت مشكلة" tone="danger">{errNote}</Callout>}
         <Caption>صور الأجهزة: بلايستيشن 5 بواسطة Soberian وبلايستيشن 4 بواسطة Evan-Amos ودراع بلايستيشن بواسطة Viper polo وإكس بوكس سيريس إكس بواسطة epredator ودراع إكس بوكس بواسطة UKER، عبر ويكيميديا كومنز. أغلفة الألعاب رسوم توضيحية.</Caption>
-        <Closing>نسخة 1.4، متصلة بسيرفر Firebase حقيقي.</Closing>
+        <Closing>نسخة 1.5، متصلة بسيرفر Firebase حقيقي.</Closing>
         </div>
     </FileCard>;
 }

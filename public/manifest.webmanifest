@@ -1,0 +1,19 @@
+{
+  "name": "NEXUS - وسيط تأجير البلايستيشن",
+  "short_name": "NEXUS",
+  "description": "وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، والمندوب يوصله لحد بابك.",
+  "lang": "ar",
+  "dir": "rtl",
+  "id": "/ajer-console/",
+  "start_url": "/ajer-console/",
+  "scope": "/ajer-console/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0a16",
+  "theme_color": "#0a0a16",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -266,7 +266,12 @@ body { background: var(--ds-page); }
   to { opacity: 1; transform: none; }
 }
 
-.nexus-app { padding-bottom: 84px; }
+.nexus-app {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-inline-start: env(safe-area-inset-left, 0px);
+  padding-inline-end: env(safe-area-inset-right, 0px);
+  padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+}
 .nexus-bottomnav {
   position: fixed; bottom: 0; inset-inline: 0; z-index: 30;
   display: flex; align-items: stretch; justify-content: space-around;
