@@ -264,25 +264,43 @@ function ChatDialog({ name, suggestions, onClose, channelId, meUid, meName }: { 
     </div>;
 }
 
-function TrackingDialog({ title, onClose }: { title: string; onClose: () => void }) {
+function TrackingMap({ lat, lng, title, exact }: { lat: number; lng: number; title: string; exact: boolean }) {
+    const divRef = useRef<HTMLDivElement | null>(null);
+    const mapRef = useRef<L.Map | null>(null);
+    useEffect(() => {
+        if (!divRef.current || mapRef.current) return;
+        const map = L.map(divRef.current, { attributionControl: true }).setView([lat, lng], exact ? 16 : 14);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        }).addTo(map);
+        if (!exact) {
+            L.circle([lat, lng], { radius: 380, color: '#8b5cff', weight: 1, dashArray: '6 6', fillColor: '#8b5cff', fillOpacity: 0.06 }).addTo(map);
+        }
+        const icon = L.divIcon({ className: 'nexus-pin is-selected', html: `<span>${exact ? 'دقيق' : 'هنا'}</span>`, iconSize: [34, 34], iconAnchor: [17, 17] });
+        L.marker([lat, lng], { icon }).addTo(map);
+        mapRef.current = map;
+        const t1 = setTimeout(() => map.invalidateSize(), 250);
+        const t2 = setTimeout(() => map.invalidateSize(), 900);
+        return () => { clearTimeout(t1); clearTimeout(t2); map.remove(); mapRef.current = null; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    return <div ref={divRef} className="nexus-map-real nexus-map-track" role="application" aria-label={`خريطة حقيقية بمكان ${title}`} />;
+}
+
+function TrackingDialog({ title, lat, lng, exact, place, onClose }: { title: string; lat: number; lng: number; exact: boolean; place: string; onClose: () => void }) {
     return <div className="nexus-overlay" role="dialog" aria-modal="true" aria-label={`تتبع مكان ${title}`}>
         <div className="nexus-sheet">
             <div className="nexus-sheet-close"><CloseButton label="إغلاق" onClick={onClose} /></div>
             <h2 className="nexus-sheet-title">مكان جهازك دلوقتي</h2>
-            <svg className="nexus-map" viewBox="0 0 360 180" role="img" aria-label="خريطة توضيحية بمكان الجهاز">
-                <rect x="0" y="0" width="360" height="180" rx="16" fill="#12122a" />
-                <path d="M 40 50 Q 120 15 200 45 Q 180 120 90 130 Q 30 105 40 50 Z" fill="#181832" stroke="#26263f" />
-                <path d="M 215 35 Q 305 15 335 65 Q 340 135 285 165 Q 215 155 210 95 Q 205 60 215 35 Z" fill="#181832" stroke="#26263f" />
-                <circle cx="150" cy="85" r="10" fill="#2ee6d6" />
-                <circle cx="150" cy="85" r="18" fill="none" stroke="#2ee6d6" strokeOpacity="0.4" strokeWidth="2" />
-                <text x="150" y="120" textAnchor="middle" fontSize="12" fill="#a2a3c6">{title}</text>
-            </svg>
+            <TrackingMap lat={lat} lng={lng} title={title} exact={exact} />
             <Facts items={[
+                { label: 'الخريطة', value: exact ? 'حقيقية، والمكان دقيق من المجموعة الخاصة' : 'حقيقية، والمكان مموّه (~٣٥٠م)' },
                 { label: 'آخر ظهور', value: 'من دقيقتين' },
-                { label: 'المكان التقريبي', value: '6 أكتوبر، الحصري' },
+                { label: 'المكان', value: place },
                 { label: 'طريقة التتبع', value: 'GPS أو AirTag جوه الجهاز' },
             ]} />
-            <Callout title="تتبع بموافقة المستأجر" tone="note">المستأجر بيعرف قبل ما يأكد الطلب إن الجهاز فيه جهاز تتبع ضد السرقة وبيوافق عليه، والتتبع بيشتغل بس طول مدة الإيجار. البيانات المعروضة هنا توضيحية لحد ما أجهزة التتبع تشتغل فعليًا.</Callout>
+            <Callout title="تتبع بموافقة المستأجر" tone="note">المستأجر بيعرف قبل ما يأكد الطلب إن الجهاز فيه جهاز تتبع ضد السرقة وبيوافق عليه، والتتبع بيشتغل بس طول مدة الإيجار. الخريطة حقيقية وبتعرض مكان الجهاز المحفوظ على السيرفر، لكن قراءات التتبع الحية (زي آخر ظهور) لسه توضيحية لحد ما أجهزة التتبع تشتغل فعليًا.</Callout>
         </div>
     </div>;
 }
@@ -1383,7 +1401,7 @@ function AuthPage() {
         setBusy(false);
     };
     return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-        <Header title="NEXUS" fact="نسخة 1.5" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، والمندوب يوصله لحد بابك." />
+        <Header title="NEXUS" fact="نسخة 1.6" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، والمندوب يوصله لحد بابك." />
         <Group label={mode === 'signup' ? 'حساب جديد' : 'تسجيل دخول'} heading={mode === 'signup' ? 'اعمل حسابك في دقيقة' : 'أهلًا برجوعك'}>
             <span className="nexus-idphoto-label">الإيميل</span>
             <input className="nexus-chat-input" dir="ltr" type="email" autoComplete="email" value={email} onChange={e => { setEmail(e.target.value); setErr(''); }} placeholder="name@gmail.com" aria-label="الإيميل" />
@@ -1436,6 +1454,14 @@ export function App() {
         if (ch) setChatWith({ name: q.get('shot_chatname') || 'محادثة', channelId: ch });
         const sr = q.get('shot_role');
         if (sr === 'courier' || sr === 'admin') setAdminRole(sr);
+        if (q.get('shot_track') === '1') {
+            setTracking({
+                id: 'shot-dev', number: 1, kind: 'Xbox', title: 'Xbox Series X', owner: 'نور',
+                area: 'أكتوبر', district: 'الحي الثالث', pricePerDay: 150, deposit: 2000, rating: 4.8, reviews: 12,
+                delivery: true, model: 'Series X', storage: '1TB', controllers: 1, games: [], includes: '',
+                lat: 29.9625, lng: 30.9275,
+            });
+        }
     }, []);
     useEffect(() => {
         if (!SHOT || user !== null) return;
@@ -1574,13 +1600,17 @@ export function App() {
 
     if (user === undefined || (user && profileDoc === undefined) || devices === undefined || ordersAll === undefined) {
         return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-            <Header title="NEXUS" fact="نسخة 1.5" intro="ثواني وبنجهز حسابك من السيرفر..." />
+            <Header title="NEXUS" fact="نسخة 1.6" intro="ثواني وبنجهز حسابك من السيرفر..." />
         </div></FileCard>;
     }
-    if (!user) return <AuthPage />;
+    if (!user) return <> <AuthPage /> {SHOT && tracking && (() => {
+        const lat = typeof tracking.lat === 'number' ? (tracking.lat as number) : AREA_CENTER['زايد'][0];
+        const lng = typeof tracking.lng === 'number' ? (tracking.lng as number) : AREA_CENTER['زايد'][1];
+        return <TrackingDialog title={tracking.title} lat={lat} lng={lng} exact={false} place={[tracking.district, areaName(tracking.area)].filter(Boolean).join('، ')} onClose={() => setTracking(null)} />;
+    })()} </>;
     if (!profile) {
         return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-            <Header title="NEXUS" fact="نسخة 1.5" intro="آخر خطوة: عرفنا بنفسك. بياناتك بتتحفظ على السيرفر بأمان، وصورتك وصورة بطاقتك للإدارة بس." />
+            <Header title="NEXUS" fact="نسخة 1.6" intro="آخر خطوة: عرفنا بنفسك. بياناتك بتتحفظ على السيرفر بأمان، وصورتك وصورة بطاقتك للإدارة بس." />
             <Group label="بياناتك" heading="معلوماتك الأساسية">
                 <ProfileForm initial={null} submitLabel="احفظ وابدأ" onSave={saveProfile} />
             </Group>
@@ -1593,7 +1623,7 @@ export function App() {
         </div>
         <div onPointerDown={lpStart} onPointerUp={lpCancel} onPointerMove={lpCancel} onPointerLeave={lpCancel} onPointerCancel={lpCancel}
             onContextMenu={e => { if ((e.target as HTMLElement).closest('.file-title')) e.preventDefault(); }}>
-            <Header title="NEXUS" fact="نسخة 1.5" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، كلم صاحبها، وادفع كاش عند الاستلام." />
+            <Header title="NEXUS" fact="نسخة 1.6" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، كلم صاحبها، وادفع كاش عند الاستلام." />
         </div>
         <Callout title="متصل بسيرفر حقيقي" tone="note">الإعلانات والطلبات والشات حقيقية وبتتحفظ على السيرفر لحظة بلحظة، والدفع كاش عند الاستلام مع المندوب.</Callout>
         <Drawer open={menuOpen} profile={profile} myCount={myListings.length} email={user.email || ''} onClose={() => setMenuOpen(false)} onGuide={() => setGuideOpen(true)} onSupport={openSupport} onSignOut={() => { fbSignOut().catch(() => {}); }} />
@@ -1632,7 +1662,14 @@ export function App() {
         {complaintOpen && <ComplaintDialog from={profile.name} onSubmit={submitComplaint} onClose={() => setComplaintOpen(false)} />}
         {gateStep !== 'none' && <AdminGateDialog step={gateStep} onRole={pickRole} onClose={() => setGateStep('none')} />}
         {chatWith && <ChatDialog name={chatWith.name} suggestions={chatWith.suggestions} channelId={chatWith.channelId} meUid={uid} meName={profile.name} onClose={() => setChatWith(null)} />}
-        {tracking && <TrackingDialog title={tracking.title} onClose={() => setTracking(null)} />}
+        {tracking && (() => {
+            const ex = exactLoc[tracking.id];
+            const hasExact = !!ex;
+            const lat = ex ? ex.lat : (typeof tracking.lat === 'number' ? (tracking.lat as number) : (AREA_CENTER[tracking.area] || AREA_CENTER['زايد'])[0]);
+            const lng = ex ? ex.lng : (typeof tracking.lng === 'number' ? (tracking.lng as number) : (AREA_CENTER[tracking.area] || AREA_CENTER['زايد'])[1]);
+            const place = [tracking.district, areaName(tracking.area)].filter(Boolean).join('، ');
+            return <TrackingDialog title={tracking.title} lat={lat} lng={lng} exact={hasExact} place={place} onClose={() => setTracking(null)} />;
+        })()}
         {editProfile && <div className="nexus-overlay" role="dialog" aria-modal="true" aria-label="تعديل بياناتك">
             <div className="nexus-sheet">
                 <div className="nexus-sheet-close"><CloseButton label="إغلاق" onClick={() => setEditProfile(false)} /></div>
@@ -1642,7 +1679,7 @@ export function App() {
         </div>}
         {errNote && <Callout title="حصلت مشكلة" tone="danger">{errNote}</Callout>}
         <Caption>صور الأجهزة: بلايستيشن 5 بواسطة Soberian وبلايستيشن 4 بواسطة Evan-Amos ودراع بلايستيشن بواسطة Viper polo وإكس بوكس سيريس إكس بواسطة epredator ودراع إكس بوكس بواسطة UKER، عبر ويكيميديا كومنز. أغلفة الألعاب رسوم توضيحية.</Caption>
-        <Closing>نسخة 1.5، متصلة بسيرفر Firebase حقيقي.</Closing>
+        <Closing>نسخة 1.6، متصلة بسيرفر Firebase حقيقي.</Closing>
         </div>
     </FileCard>;
 }
