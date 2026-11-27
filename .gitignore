@@ -1,0 +1,7 @@
+node_modules/
+dist/
+dist-shot/
+scripts-test/
+apk/.gradle/
+apk/app/build/
+apk/local.properties
