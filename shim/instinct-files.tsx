@@ -31,21 +31,21 @@ function hexToRgba(hex: string, alpha: number): string {
   if (accent && /^#?[0-9a-f]{6}$/i.test(accent.trim())) {
     const a = accent;
     const g = (x: number) => hexToRgba(a, x);
-    extra.push(`.ajer-app h1{text-shadow:0 0 18px ${g(0.45)},0 0 46px ${g(0.3)}}`);
-    extra.push(`.ajer-num{border-color:${g(0.5)};color:${a};box-shadow:0 0 10px ${g(0.25)}}`);
-    extra.push(`.ajer-menu-btn{color:${a};box-shadow:0 0 12px ${g(0.25)}}`);
-    extra.push(`.ajer-menu-btn:focus-visible{outline-color:${a}}`);
-    extra.push(`.ajer-badge{border-color:${g(0.55)};color:${a};background:${g(0.1)};box-shadow:0 0 12px ${g(0.25)}}`);
-    extra.push(`.ajer-progress>div{background:linear-gradient(90deg,#8b5cff,${a});box-shadow:0 0 12px ${g(0.5)}}`);
-    extra.push(`.ajer-ring{filter:drop-shadow(0 0 12px ${g(0.35)})}`);
-    extra.push(`.ajer-ring-label{color:${a};text-shadow:0 0 14px ${g(0.6)}}`);
-    extra.push(`.ajer-check input{accent-color:${a}}`);
-    extra.push(`.ajer-bubble-me{background:${g(0.12)};border-color:${g(0.45)}}`);
-    extra.push(`.ajer-chat-input:focus{outline-color:${g(0.5)}}`);
-    extra.push(`.ajer-drawer-link[aria-current="page"]{color:${a};background:${g(0.08)};text-shadow:0 0 12px ${g(0.5)}}`);
-    extra.push(`.ajer-drawer-link:focus-visible{outline-color:${a}}`);
+    extra.push(`.nexus-app h1{text-shadow:0 0 18px ${g(0.45)},0 0 46px ${g(0.3)}}`);
+    extra.push(`.nexus-num{border-color:${g(0.5)};color:${a};box-shadow:0 0 10px ${g(0.25)}}`);
+    extra.push(`.nexus-menu-btn{color:${a};box-shadow:0 0 12px ${g(0.25)}}`);
+    extra.push(`.nexus-menu-btn:focus-visible{outline-color:${a}}`);
+    extra.push(`.nexus-badge{border-color:${g(0.55)};color:${a};background:${g(0.1)};box-shadow:0 0 12px ${g(0.25)}}`);
+    extra.push(`.nexus-progress>div{background:linear-gradient(90deg,#8b5cff,${a});box-shadow:0 0 12px ${g(0.5)}}`);
+    extra.push(`.nexus-ring{filter:drop-shadow(0 0 12px ${g(0.35)})}`);
+    extra.push(`.nexus-ring-label{color:${a};text-shadow:0 0 14px ${g(0.6)}}`);
+    extra.push(`.nexus-check input{accent-color:${a}}`);
+    extra.push(`.nexus-bubble-me{background:${g(0.12)};border-color:${g(0.45)}}`);
+    extra.push(`.nexus-chat-input:focus{outline-color:${g(0.5)}}`);
+    extra.push(`.nexus-drawer-link[aria-current="page"]{color:${a};background:${g(0.08)};text-shadow:0 0 12px ${g(0.5)}}`);
+    extra.push(`.nexus-drawer-link:focus-visible{outline-color:${a}}`);
     extra.push(`.file-nav a[aria-current="page"]{color:${a};box-shadow:inset 0 -2px 0 ${a};text-shadow:0 0 14px ${g(0.6)}}`);
-    extra.push(`.ajer-card-actions button[data-variant="primary"],.ajer-app>button[data-variant="primary"],.ajer-sheet button[data-variant="primary"]{box-shadow:0 0 16px ${g(0.35)}}`);
+    extra.push(`.nexus-card-actions button[data-variant="primary"],.nexus-app>button[data-variant="primary"],.nexus-sheet button[data-variant="primary"]{box-shadow:0 0 16px ${g(0.35)}}`);
   }
   if (t.شكل_الأزرار === 'مربع') {
     extra.push('.file-button,.file-button.is-pill{border-radius:10px}');
