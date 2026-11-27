@@ -19,12 +19,13 @@ export type ProfileDoc = {
 };
 
 export type DeviceDoc = {
-    id: string; kind: 'PS5' | 'PS4'; title: string;
+    id: string; kind: 'PS5' | 'PS4' | 'Xbox'; title: string;
     ownerId: string; ownerName: string;
     area: 'زايد' | 'أكتوبر'; district: string;
     pricePerDay: number; deposit: number; rating: number; reviews: number; delivery: boolean;
     model: string; storage: string; controllers: number; games: string[]; includes: string;
     photoKey?: string; photoData?: string;
+    lat?: number; lng?: number;
     status: 'open' | 'rented'; createdAt: number;
 };
 

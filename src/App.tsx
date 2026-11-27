@@ -18,13 +18,16 @@ import dualsensePhoto from './photos/dualsense.png';
 import fcPhoto from './photos/game-fc.png';
 import godPhoto from './photos/game-god.png';
 import spidermanPhoto from './photos/game-spider-man.png';
+import xboxPhoto from './photos/xbox.jpg';
+import xboxpadPhoto from './photos/xboxpad.jpg';
 
 type ConsoleListing = {
-    id: string; number: number; kind: 'PS5' | 'PS4'; title: string; owner: string;
+    id: string; number: number; kind: 'PS5' | 'PS4' | 'Xbox'; title: string; owner: string;
     area: 'زايد' | 'أكتوبر'; district: string;
     pricePerDay: number; deposit: number; rating: number; reviews: number; delivery: boolean;
     model: string; storage: string; controllers: number; games: string[]; includes: string;
     photoKey?: string; mine?: boolean; ownerId?: string; photoData?: string; createdAt?: number;
+    lat?: number; lng?: number;
     status?: 'open' | 'courier' | 'rented'; requestAt?: number; courierMs?: number; dueMs?: number;
 };
 
@@ -40,14 +43,26 @@ type Order = { id: string; requestId: string; title: string; owner: string; owne
 type Rental = { title: string; owner: string; ownerPhone: string; pricePerDay: number; days: number; startMs: number; returned: boolean; channelId?: string };
 type ChatTarget = { name: string; suggestions?: string[]; channelId?: string };
 
-const PHOTOS: Record<string, string> = { ps5: ps5Photo, ps4: ps4Photo, dualsense: dualsensePhoto, fc: fcPhoto, god: godPhoto, spiderman: spidermanPhoto };
+const PHOTOS: Record<string, string> = { ps5: ps5Photo, ps4: ps4Photo, dualsense: dualsensePhoto, fc: fcPhoto, god: godPhoto, spiderman: spidermanPhoto, xbox: xboxPhoto, xboxpad: xboxpadPhoto };
+const KIND_ALT: Record<string, string> = { PS5: 'جهاز بلايستيشن 5 مع ذراع تحكم', PS4: 'جهاز بلايستيشن 4 مع ذراع تحكم', Xbox: 'جهاز إكس بوكس مع ذراع تحكم' };
+const KIND_MODELS: Record<string, { value: string; label: string }[]> = {
+    PS5: [{ value: 'ستاندارد', label: 'ستاندارد' }, { value: 'ديجيتال', label: 'ديجيتال' }, { value: 'برو', label: 'برو' }],
+    PS4: [{ value: 'سليم', label: 'سليم' }, { value: 'برو', label: 'برو' }, { value: 'فات', label: 'فات' }],
+    Xbox: [{ value: 'سيريس إكس', label: 'سيريس إكس' }, { value: 'سيريس إس', label: 'سيريس إس' }, { value: 'ون إكس', label: 'ون إكس' }],
+};
+const KIND_DEFAULT_MODEL: Record<string, string> = { PS5: 'ستاندارد', PS4: 'سليم', Xbox: 'سيريس إكس' };
+const KIND_PHOTO: Record<string, string> = { PS5: 'ps5', PS4: 'ps4', Xbox: 'xbox' };
+const KIND_PAD_PHOTO: Record<string, string> = { PS5: 'dualsense', PS4: 'dualsense', Xbox: 'xboxpad' };
+const KIND_TITLE: Record<string, string> = { PS5: 'بلايستيشن 5', PS4: 'بلايستيشن 4', Xbox: 'إكس بوكس' };
+const AREA_CENTER: Record<string, [number, number]> = { 'زايد': [30.04, 30.975], 'أكتوبر': [29.96, 30.93] };
+type LatLng = { lat: number; lng: number };
 const AVATARS = ['🎮', '👾', '🕹️', '⚡'];
 
 const COURIER = { name: 'محمود س.', phone: '01001234567' };
 const DEMO_OWNER_PHONE = '01009876543';
 const STEP_MS = 15000;
 const ORDER_STEPS = [
-    'المندوب راح يستلم البلايستيشن من المالك',
+    'المندوب راح يستلم الجهاز من المالك',
     'المندوب فحص الجهاز وركّب AirTag التتبع جواه',
     'المندوب اتحرك، في طريقه ليك',
     'المندوب وصل، استلم جهازك',
@@ -186,7 +201,7 @@ function Stars({ rating, reviews }: { rating: number; reviews: number }) {
 
 function ConsoleCard({ listing, onOpen, onDelete, onTrack }: { listing: ConsoleListing; onOpen?: () => void; onDelete?: (id: string) => void; onTrack?: () => void }) {
     const inner = <>
-        <img className="nexus-thumb" src={listing.photoData || PHOTOS[listing.photoKey || listing.kind.toLowerCase()]} alt={listing.kind === 'PS5' ? 'جهاز بلايستيشن 5 مع ذراع تحكم' : 'جهاز بلايستيشن 4 مع ذراع تحكم'} />
+        <img className="nexus-thumb" src={listing.photoData || PHOTOS[listing.photoKey || listing.kind.toLowerCase()]} alt={KIND_ALT[listing.kind] || 'جهاز ألعاب مع ذراع تحكم'} />
         <div className="nexus-card-body">
             <div className="nexus-card-title"><span className="nexus-num">{listing.number}</span> {listing.title}</div>
             <div className="nexus-muted">{listing.owner} · {areaName(listing.area)}، {listing.district}</div>
@@ -312,6 +327,7 @@ function Home({ consoles, onOpenConsole }: { consoles: ConsoleListing[]; onOpenC
                     <div className="nexus-circles">
                         <button type="button" className="nexus-circle" onClick={() => { setPickKind('PS5'); setStep(2); }}>PS5</button>
                         <button type="button" className="nexus-circle" onClick={() => { setPickKind('PS4'); setStep(2); }}>PS4</button>
+                        <button type="button" className="nexus-circle" onClick={() => { setPickKind('Xbox'); setStep(2); }}>Xbox</button>
                     </div>
                     <FileButton variant="ghost" compact onClick={() => setStep(0)}>ارجع</FileButton>
                 </div>}
@@ -334,7 +350,7 @@ function GuideDialog({ onClose }: { onClose: () => void }) {
             <div className="nexus-sheet-close"><CloseButton label="إغلاق" onClick={onClose} /></div>
             <h2 className="nexus-sheet-title">إزاي شغال</h2>
             <NumberedList items={[
-                'صاحب البلايستيشن يضيف جهازه بالصور والألعاب والسعر والتأمين.',
+                'صاحب الجهاز يضيف جهازه بالصور والألعاب والسعر والتأمين.',
                 'تختار أقرب جهاز أو دراع أو لعبة، وتحدد عدد الأيام.',
                 'مندوب المنصة بيستلم الجهاز من المالك ويراجعه ويحط فيه AirTag تتبع، ويوصله لحد بابك، وتدفع عند الاستلام.',
                 'أول ما تستلم، العداد يبدأ في حسابك وتقدر تكلم المالك في أي وقت.',
@@ -430,7 +446,7 @@ function ConsoleDetailPage({ listing, busy, onRequest, onChat }: { listing: Cons
         <Link className="file-button is-compact" data-variant="secondary" to="/">شوف الإعلانات</Link>
     </Group>;
     return <Group label="تفاصيل الجهاز" heading={listing.title}>
-        <img className="nexus-detail-photo" src={listing.photoData || PHOTOS[listing.photoKey || listing.kind.toLowerCase()]} alt={listing.kind === 'PS5' ? 'جهاز بلايستيشن 5 مع ذراع تحكم' : 'جهاز بلايستيشن 4 مع ذراع تحكم'} />
+        <img className="nexus-detail-photo" src={listing.photoData || PHOTOS[listing.photoKey || listing.kind.toLowerCase()]} alt={KIND_ALT[listing.kind] || 'جهاز ألعاب مع ذراع تحكم'} />
         <div className="nexus-muted">{listing.owner} · {areaName(listing.area)}، {listing.district}</div>
         <div className="nexus-muted"><Stars rating={listing.rating} reviews={listing.reviews} />' · توصيل بالمندوب'</div>
         {listing.games.length > 0 && <div className="nexus-chips">{listing.games.map((g, i) => <span key={g} className="nexus-chip" style={gameChipStyle(i)}>{g}</span>)}</div>}
@@ -480,23 +496,32 @@ function BottomNav({ onGuide }: { onGuide: () => void }) {
     </nav>;
 }
 
-function MapPage({ consoles, onRequest }: { consoles: ConsoleListing[]; onRequest: (l: ConsoleListing) => void }) {
+function MapPage({ consoles, onRequest, exactIds }: { consoles: ConsoleListing[]; onRequest: (l: ConsoleListing) => void; exactIds: string[] }) {
     const [selected, setSelected] = useState<number | null>(null);
     const [locNote, setLocNote] = useState('');
     const [locating, setLocating] = useState(false);
     const mapDivRef = useRef<HTMLDivElement | null>(null);
     const leafletMapRef = useRef<L.Map | null>(null);
-    const markersRef = useRef<L.Marker[]>([]);
+    const groupRef = useRef<L.LayerGroup | null>(null);
     const meRef = useRef<L.CircleMarker | null>(null);
     const meAccRef = useRef<L.Circle | null>(null);
 
-    // نقطة تقريبية ثابتة لكل إعلان حسب منطقته (بيانات تجريبية بدون إحداثيات حقيقية)
-    const coordsFor = (l: ConsoleListing): [number, number] => {
-        const base: [number, number] = l.area === 'زايد' ? [30.04, 30.975] : [29.96, 30.93];
+    // مكان حقيقي محفوظ مع الإعلان: يظهر دقيق للمالك والمندوب فقط، ومموّه داخل دايرة ~٣٥٠م لباقي الناس
+    const exactSet = new Set(exactIds);
+    const posFor = (l: ConsoleListing): { pos: [number, number]; exact: boolean } => {
+        if (typeof l.lat === 'number' && typeof l.lng === 'number') {
+            if (exactSet.has(l.id)) return { pos: [l.lat, l.lng], exact: true };
+            let h = 0;
+            for (let i = 0; i < l.id.length; i++) h = (h * 31 + l.id.charCodeAt(i)) >>> 0;
+            const ang = (h % 360) * Math.PI / 180;
+            const r = 0.002 + (((h >> 8) % 100) / 100) * 0.0015;
+            return { pos: [l.lat + r * Math.sin(ang), l.lng + r * Math.cos(ang)], exact: false };
+        }
+        const base = AREA_CENTER[l.area] || AREA_CENTER['زايد'];
         const j = l.number * 7919;
         const dx = ((j % 100) / 100 - 0.5) * 0.05;
         const dy = (((j * 31) % 100) / 100 - 0.5) * 0.04;
-        return [base[0] + dx, base[1] + dy];
+        return { pos: [base[0] + dx, base[1] + dy], exact: false };
     };
 
     useEffect(() => {
@@ -516,19 +541,26 @@ function MapPage({ consoles, onRequest }: { consoles: ConsoleListing[]; onReques
     useEffect(() => {
         const map = leafletMapRef.current;
         if (!map) return;
-        markersRef.current.forEach((m) => m.remove());
-        markersRef.current = consoles.map((l) => {
+        groupRef.current?.remove();
+        const group = L.layerGroup();
+        consoles.forEach((l) => {
+            const { pos, exact } = posFor(l);
+            if (!exact && typeof l.lat === 'number') {
+                L.circle(pos, { radius: 380, color: '#8b5cff', weight: 1, dashArray: '6 6', fillColor: '#8b5cff', fillOpacity: 0.06 }).addTo(group);
+            }
             const icon = L.divIcon({
                 className: selected === l.number ? 'nexus-pin is-selected' : 'nexus-pin',
                 html: `<span>${l.number}</span>`,
                 iconSize: [30, 30],
                 iconAnchor: [15, 15],
             });
-            const marker = L.marker(coordsFor(l), { icon, title: `جهاز رقم ${l.number}: ${l.title}` }).addTo(map);
+            const marker = L.marker(pos, { icon, title: `جهاز رقم ${l.number}: ${l.title}` }).addTo(group);
             marker.on('click', () => setSelected(l.number));
-            return marker;
         });
-    }, [consoles, selected]);
+        group.addTo(map);
+        groupRef.current = group;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [consoles, selected, exactIds.join(',')]);
 
     const showMyLocation = () => {
         setLocNote('');
@@ -572,7 +604,7 @@ function MapPage({ consoles, onRequest }: { consoles: ConsoleListing[]; onReques
     const current = consoles.find(l => l.number === selected);
     return <Group label="الخريطة" heading="الأجهزة حوالينك">
         <div ref={mapDivRef} className="nexus-map-real" role="application" aria-label="خريطة أماكن الأجهزة في الشيخ زايد و6 أكتوبر" />
-        <Caption>خريطة حقيقية من OpenStreetMap. دوس على رقم تشوف تفاصيله. الأماكن تقريبية للتوضيح، مش عنوان المالك بالظبط.</Caption>
+        <Caption>خريطة حقيقية من OpenStreetMap. دوس على رقم تشوف تفاصيله. مكان كل جهاز حقيقي بس بيظهر تقريبي جوه دايرة حوالي ٣٥٠ متر حماية لخصوصية المالك — المكان الدقيق بيظهر للمالك نفسه وللمندوب وقت الاستلام بس.</Caption>
         <FileButton variant="secondary" compact pill onClick={showMyLocation} disabled={locating}>{locating ? 'بنحدد مكانك...' : 'أظهر مكاني على الخريطة'}</FileButton>
         {locNote && <Caption>{locNote}</Caption>}
         {current
@@ -670,8 +702,40 @@ function RequestPage({ target, hasOpenRequest, busy, onConfirm }: { target: { ti
     </Group>;
 }
 
-function AddPage({ onAdd, blocked, profile }: { onAdd: (l: { kind: 'PS5' | 'PS4'; model: string; storage: string; controllers: number; area: 'زايد' | 'أكتوبر'; district: string; games: string[]; includes: string; pricePerDay: number; deposit: number; photoKey?: string; photoData?: string }) => void; blocked: boolean; profile: UserProfile }) {
-    const [kind, setKind] = useState<'PS5' | 'PS4'>('PS5');
+function LocationPicker({ area, value, onChange }: { area: 'زايد' | 'أكتوبر'; value: LatLng | null; onChange: (v: LatLng) => void }) {
+    const divRef = useRef<HTMLDivElement | null>(null);
+    const mapRef = useRef<L.Map | null>(null);
+    const markerRef = useRef<L.Marker | null>(null);
+    useEffect(() => {
+        if (!divRef.current || mapRef.current) return;
+        const map = L.map(divRef.current, { attributionControl: false }).setView(AREA_CENTER[area] || AREA_CENTER['زايد'], 13);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+        map.on('click', (e: L.LeafletMouseEvent) => onChange({ lat: e.latlng.lat, lng: e.latlng.lng }));
+        mapRef.current = map;
+        setTimeout(() => map.invalidateSize(), 250);
+        return () => { map.remove(); mapRef.current = null; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    useEffect(() => {
+        if (mapRef.current) mapRef.current.setView(AREA_CENTER[area] || AREA_CENTER['زايد'], 13);
+    }, [area]);
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map) return;
+        if (markerRef.current) { markerRef.current.remove(); markerRef.current = null; }
+        if (value) {
+            const icon = L.divIcon({ className: 'nexus-pin is-selected', html: '<span>هنا</span>', iconSize: [30, 30], iconAnchor: [15, 15] });
+            const m = L.marker([value.lat, value.lng], { icon, draggable: true }).addTo(map);
+            m.on('dragend', () => { const p = m.getLatLng(); onChange({ lat: p.lat, lng: p.lng }); });
+            markerRef.current = m;
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [value]);
+    return <div ref={divRef} className="nexus-map-pick" role="application" aria-label="اختار مكان الجهاز على الخريطة" />;
+}
+
+function AddPage({ onAdd, blocked, profile }: { onAdd: (l: { kind: 'PS5' | 'PS4' | 'Xbox'; model: string; storage: string; controllers: number; area: 'زايد' | 'أكتوبر'; district: string; games: string[]; includes: string; pricePerDay: number; deposit: number; photoKey?: string; photoData?: string; lat: number; lng: number }) => void; blocked: boolean; profile: UserProfile }) {
+    const [kind, setKind] = useState<'PS5' | 'PS4' | 'Xbox'>('PS5');
     const [model, setModel] = useState('ستاندارد');
     const [storage, setStorage] = useState('825GB');
     const [controllers, setControllers] = useState(2);
@@ -685,9 +749,25 @@ function AddPage({ onAdd, blocked, profile }: { onAdd: (l: { kind: 'PS5' | 'PS4'
     const [deposit, setDeposit] = useState('');
     const [error, setError] = useState('');
     const [added, setAdded] = useState(false);
-    const modelOptions = kind === 'PS5'
-        ? [{ value: 'ستاندارد', label: 'ستاندارد' }, { value: 'ديجيتال', label: 'ديجيتال' }, { value: 'برو', label: 'برو' }]
-        : [{ value: 'سليم', label: 'سليم' }, { value: 'برو', label: 'برو' }, { value: 'فات', label: 'فات' }];
+    const [loc, setLoc] = useState<LatLng | null>(null);
+    const [locNote, setLocNote] = useState('');
+    const [locating, setLocating] = useState(false);
+    const useMyLocation = () => {
+        setLocNote('');
+        if (!('geolocation' in navigator)) { setLocNote('المتصفح ده مش بيدعم تحديد المكان. حدد مكان جهازك بيدك على الخريطة.'); return; }
+        setLocating(true);
+        navigator.geolocation.getCurrentPosition(
+            (p) => { setLoc({ lat: p.coords.latitude, lng: p.coords.longitude }); setLocNote('اتحفظ مكانك الحالي كمكان للجهاز.'); setLocating(false); },
+            (err) => {
+                if (err.code === 1) setLocNote('إذن الموقع ممنوع. فعّله من إعدادات المتصفح، أو حدد المكان بيدك على الخريطة.');
+                else if (err.code === 2) setLocNote('مكانك مش متاح دلوقتي. اتأكد إن الـ GPS شغال، أو حدد المكان بيدك على الخريطة.');
+                else setLocNote('تحديد المكان خد وقت أطول من اللازم. جرب تاني أو حدد المكان بيدك على الخريطة.');
+                setLocating(false);
+            },
+            { timeout: 20000, maximumAge: 60000, enableHighAccuracy: true }
+        );
+    };
+    const modelOptions = KIND_MODELS[kind] || KIND_MODELS.PS5;
     const pickPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
         const f = e.target.files && e.target.files[0];
         if (!f) return;
@@ -698,11 +778,13 @@ function AddPage({ onAdd, blocked, profile }: { onAdd: (l: { kind: 'PS5' | 'PS4'
         const d = deposit.trim() === '' ? 0 : parseInt(deposit, 10);
         if (!Number.isFinite(p) || p < 10 || p > 5000) { setError('اكتب سعر اليوم بالجنيه، من 10 لـ 5000.'); return; }
         if (!Number.isFinite(d) || d < 0 || d > 50000) { setError('اكتب التأمين بالجنيه، أو سيبه 0 لو من غير تأمين.'); return; }
+        if (!loc) { setError('حدد مكان الجهاز على الخريطة: دوس على مكانك في الخريطة أو استخدم زرار مكاني الحالي.'); return; }
         setError('');
         onAdd({
             kind, model, storage, controllers, area, district: district.trim() || areaName(area),
             games: games.split(/[،,]/).map(g => g.trim()).filter(Boolean), includes: includes.trim(),
             pricePerDay: p, deposit: d, photoKey: photoData ? undefined : photoKey, photoData: photoData || undefined,
+            lat: loc.lat, lng: loc.lng,
         });
         setAdded(true);
     };
@@ -716,7 +798,7 @@ function AddPage({ onAdd, blocked, profile }: { onAdd: (l: { kind: 'PS5' | 'PS4'
             <Link className="file-button is-compact" data-variant="secondary" to="/">شوف الإعلانات</Link>
         </Group> : <Group label="أضف إعلانك" heading="أجر جهازك للناس">
             <Paragraph>الإعلان هينزل باسمك ورقمك من حسابك: {profile.name} · <bdi>{profile.phone}</bdi></Paragraph>
-            <ChoiceRow label="الجهاز" options={[{ value: 'PS5', label: 'PS5' }, { value: 'PS4', label: 'PS4' }]} value={kind} onChange={(v: string) => { const k = v as 'PS5' | 'PS4'; setKind(k); setModel(k === 'PS5' ? 'ستاندارد' : 'سليم'); setPhotoKey(k === 'PS5' ? 'ps5' : 'ps4'); }} />
+            <ChoiceRow label="الجهاز" options={[{ value: 'PS5', label: 'PS5' }, { value: 'PS4', label: 'PS4' }, { value: 'Xbox', label: 'Xbox' }]} value={kind} onChange={(v: string) => { const k = v as 'PS5' | 'PS4' | 'Xbox'; setKind(k); setModel(KIND_DEFAULT_MODEL[k]); setPhotoKey(KIND_PHOTO[k]); }} />
             <ChoiceRow label="الموديل" options={modelOptions} value={model} onChange={(v: string) => setModel(v)} />
             <ChoiceRow label="المساحة" options={[{ value: '500GB', label: '500 جيجا' }, { value: '825GB', label: '825 جيجا' }, { value: '1TB', label: '1 تيرا' }, { value: '2TB', label: '2 تيرا' }]} value={storage} onChange={(v: string) => setStorage(v)} />
             <Slider label="عدد الدراعات" min={1} max={4} value={controllers} onChange={(v: number) => setControllers(v)} describe={(v: number) => v === 1 ? 'دراع واحد' : v === 2 ? 'دراعين' : `${v} دراعات`} />
@@ -728,12 +810,22 @@ function AddPage({ onAdd, blocked, profile }: { onAdd: (l: { kind: 'PS5' | 'PS4'
                 </label>
                 {photoData ? <img className="nexus-idphoto-preview" src={photoData} alt="صورة الجهاز اللي رفعتها" /> : null}
             </div>
-            {!photoData && <ChoiceRow label="أو اختار صورة جاهزة" options={[{ value: kind === 'PS5' ? 'ps5' : 'ps4', label: 'صورة الجهاز' }, { value: 'dualsense', label: 'صورة دراع' }]} value={photoKey === 'dualsense' ? 'dualsense' : (kind === 'PS5' ? 'ps5' : 'ps4')} onChange={(v: string) => setPhotoKey(v)} />}
+            {!photoData && <ChoiceRow label="أو اختار صورة جاهزة" options={[{ value: KIND_PHOTO[kind], label: 'صورة الجهاز' }, { value: KIND_PAD_PHOTO[kind], label: 'صورة دراع' }]} value={[KIND_PHOTO[kind], KIND_PAD_PHOTO[kind]].includes(photoKey) ? photoKey : KIND_PHOTO[kind]} onChange={(v: string) => setPhotoKey(v)} />}
             <Caption>صورة حقيقية للجهاز بتخلي إعلانك أوضح وبتزود ثقة الناس فيك.</Caption>
             <TextField label="الألعاب اللي مع الجهاز (افصل بينها بفاصلة)" value={games} onChange={(v: string) => setGames(v)} />
             <TextField label="إيه اللي بييجي مع الجهاز؟ (شاحن، كابلات...)" value={includes} onChange={(v: string) => setIncludes(v)} />
             <ChoiceRow label="المنطقة" options={[{ value: 'زايد', label: 'الشيخ زايد' }, { value: 'أكتوبر', label: '6 أكتوبر' }]} value={area} onChange={(v: string) => setArea(v as 'زايد' | 'أكتوبر')} />
             <TextField label="الحي أو الكمبوند" value={district} onChange={(v: string) => setDistrict(v)} />
+            <div className="nexus-idphoto">
+                <span className="nexus-idphoto-label">مكان الجهاز على الخريطة</span>
+                <LocationPicker area={area} value={loc} onChange={(v: LatLng) => { setLoc(v); setLocNote(''); }} />
+                <div className="nexus-card-actions">
+                    <FileButton variant="secondary" compact pill onClick={useMyLocation} disabled={locating}>{locating ? 'بنحدد مكانك...' : 'استخدم مكاني الحالي'}</FileButton>
+                </div>
+            </div>
+            {locNote && <Caption>{locNote}</Caption>}
+            {loc && <Caption>المكان اتحفظ. تقدر تحرك الدبوس بيدك لو عايز تظبطه.</Caption>}
+            <Callout title="مكانك الدقيق في أمان" tone="note">اللي بيتصفح التطبيق بيشوف دايرة تقريبية بقطر ٣٥٠ متر حوالين المكان الحقيقي، مش بيتك بالظبط. المكان الدقيق بيظهر ليك انت وللمندوب بس وقت الاستلام.</Callout>
             <TextField label="سعر اليوم بالجنيه (اكتب الرقم)" value={price} onChange={(v: string) => setPrice(v)} />
             <Callout title="عمولة التطبيق 20 في المية" tone="note">التطبيق بياخد عمولة 20 في المية من سعر الإيجار بس، مش من التأمين. التأمين كله بيرجع للمستأجر.</Callout>
             {(() => { const pv = parseInt(price, 10); if (!Number.isFinite(pv) || pv <= 0) return null; const fee = Math.round(pv * COMMISSION); return <Callout title="احسبها على السعر اللي كتبته" tone="note">لو اليوم بـ {pv} ج.م: عمولة التطبيق {fee} ج.م عن كل يوم، وصافيلك {pv - fee} ج.م في اليوم. يعني لو اتأجر 3 أيام، صافيك {3 * (pv - fee)} ج.م من أصل {3 * pv} ج.م.</Callout>; })()}
@@ -1099,8 +1191,8 @@ function AdminGateDialog({ step, onRole, onClose }: { step: 'password' | 'role';
     </div>;
 }
 
-function CourierPanel({ feed, myUid, myName, onTake, onPickedUp, onArrived, onDeliver, onReturnDone, onChat, onExit }: {
-    feed: OrderDoc[]; myUid: string; myName: string;
+function CourierPanel({ feed, myUid, myName, devices, onTake, onPickedUp, onArrived, onDeliver, onReturnDone, onChat, onExit }: {
+    feed: OrderDoc[]; myUid: string; myName: string; devices: DeviceDoc[];
     onTake: (o: OrderDoc) => void; onPickedUp: (o: OrderDoc) => void; onArrived: (o: OrderDoc) => void;
     onDeliver: (o: OrderDoc) => void; onReturnDone: (o: OrderDoc) => void;
     onChat: (name: string, suggestions: string[], channelId: string) => void; onExit: () => void;
@@ -1125,6 +1217,14 @@ function CourierPanel({ feed, myUid, myName, onTake, onPickedUp, onArrived, onDe
                 <div className="nexus-muted">المستأجر: {o.renterName}{o.renterPhone ? <> · <bdi>{o.renterPhone}</bdi></> : null}</div>
                 <div className="nexus-muted">{yom(o.days)} · المطلوب عند الاستلام {o.rent + o.deposit + (o.deliveryFee || 0) - (o.discount || 0)} ج.م</div>
                 <div className="nexus-status-line"><span className="nexus-dot nexus-dot-pink" />{statusAr(o.status)}</div>
+                {o.courierId === myUid && (o.status === 'taken' || o.status === 'returning') && (() => {
+                    const dv = devices.find(d => d.id === o.deviceId);
+                    if (!dv || typeof dv.lat !== 'number' || typeof dv.lng !== 'number') return null;
+                    return <>
+                        <a className="file-button is-compact" data-variant="secondary" href={`https://www.google.com/maps?q=${dv.lat},${dv.lng}`} target="_blank" rel="noreferrer">افتح مكان المالك الدقيق في الخريطة</a>
+                        <Caption>المكان الدقيق ده للمندوب بس، متشاركوش مع حد تاني.</Caption>
+                    </>;
+                })()}
                 {o.status === 'accepted' && <div className="nexus-card-actions">
                     <FileButton variant="primary" compact pill onClick={() => onTake(o)}>استلم الطلب ده</FileButton>
                 </div>}
@@ -1294,7 +1394,7 @@ function AuthPage() {
         setBusy(false);
     };
     return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-        <Header title="NEXUS" fact="نسخة 1.2" intro="وسيط بين اللي عنده بلايستيشن واللي عايز يلعب: اختار أقرب جهاز، والمندوب يوصله لحد بابك." />
+        <Header title="NEXUS" fact="نسخة 1.3" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، والمندوب يوصله لحد بابك." />
         <Group label={mode === 'signup' ? 'حساب جديد' : 'تسجيل دخول'} heading={mode === 'signup' ? 'اعمل حسابك في دقيقة' : 'أهلًا برجوعك'}>
             <span className="nexus-idphoto-label">الإيميل</span>
             <input className="nexus-chat-input" dir="ltr" type="email" autoComplete="email" value={email} onChange={e => { setEmail(e.target.value); setErr(''); }} placeholder="name@gmail.com" aria-label="الإيميل" />
@@ -1377,6 +1477,7 @@ export function App() {
         area: d.area, district: d.district, pricePerDay: d.pricePerDay, deposit: d.deposit, rating: d.rating, reviews: d.reviews,
         delivery: d.delivery, model: d.model, storage: d.storage, controllers: d.controllers, games: d.games, includes: d.includes,
         photoKey: d.photoKey, photoData: d.photoData, mine: d.ownerId === uid, status: d.status, createdAt: d.createdAt,
+        lat: d.lat, lng: d.lng,
     }));
     const consoles: ConsoleListing[] = realListings.filter(l => l.status !== 'rented');
     const myListings = realListings.filter(l => l.ownerId === uid);
@@ -1385,6 +1486,10 @@ export function App() {
     const currentOrder = myOrders.find(o => ['accepted', 'taken', 'pickedup', 'arrived'].includes(o.status)) || null;
     const rentalOrder = myOrders.find(o => o.status === 'delivered' || o.status === 'returning') || null;
     const courierFeed = orders.filter(o => o.status === 'accepted' || (o.courierId === uid && [...ORDER_BUSY, 'returning' as OrderStatus].includes(o.status)));
+    const exactMapIds = [
+        ...myListings.map(l => l.id),
+        ...orders.filter(o => o.courierId === uid && [...ORDER_BUSY, 'returning' as OrderStatus].includes(o.status)).map(o => o.deviceId || ''),
+    ].filter(Boolean);
 
     const requestConsole = (l: ConsoleListing) => {
         setRequestTarget({ title: l.title, owner: l.owner, ownerLine: `${l.owner} · ${areaName(l.area)}، ${l.district}`, pricePerDay: l.pricePerDay, deposit: l.deposit, number: l.number, deviceId: l.id, ownerId: l.ownerId });
@@ -1421,14 +1526,14 @@ export function App() {
     const openDmFor = (l: ConsoleListing) => handleChat(l.owner, undefined, dmChannelId(l.id, uid));
     const chatNameOf = (c: ChatDoc) => uid === c.ownerId ? (c.renterName || 'مستأجر') : (c.kind === 'order' ? (c.courierName || 'المندوب') : (c.ownerName || 'المالك'));
 
-    const addListing = (data: { kind: 'PS5' | 'PS4'; model: string; storage: string; controllers: number; area: 'زايد' | 'أكتوبر'; district: string; games: string[]; includes: string; pricePerDay: number; deposit: number; photoKey?: string; photoData?: string }) => {
+    const addListing = (data: { kind: 'PS5' | 'PS4' | 'Xbox'; model: string; storage: string; controllers: number; area: 'زايد' | 'أكتوبر'; district: string; games: string[]; includes: string; pricePerDay: number; deposit: number; photoKey?: string; photoData?: string; lat: number; lng: number }) => {
         if (!user || !profile) return;
         run(fbAddDevice({
-            kind: data.kind, title: data.kind === 'PS5' ? `بلايستيشن 5 ${data.model}` : `بلايستيشن 4 ${data.model}`,
+            kind: data.kind, title: `${KIND_TITLE[data.kind] || data.kind} ${data.model}`,
             ownerId: uid, ownerName: profile.name, area: data.area, district: data.district,
             pricePerDay: data.pricePerDay, deposit: data.deposit, rating: 0, reviews: 0, delivery: true,
             model: data.model, storage: data.storage, controllers: data.controllers, games: data.games, includes: data.includes,
-            photoKey: data.photoKey, photoData: data.photoData, status: 'open', createdAt: Date.now(),
+            photoKey: data.photoKey, photoData: data.photoData, lat: data.lat, lng: data.lng, status: 'open', createdAt: Date.now(),
         }), 'الإعلان ماتنشرش. اتأكد من النت وجرب تاني.');
     };
     const confirmRequest = (r: { days: number; rent: number; deposit: number; fromMs: number; deliveryFee: number; promo: string; discount: number; payMethod: string }) => {
@@ -1475,13 +1580,13 @@ export function App() {
 
     if (user === undefined || (user && profileDoc === undefined) || devices === undefined || ordersAll === undefined) {
         return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-            <Header title="NEXUS" fact="نسخة 1.2" intro="ثواني وبنجهز حسابك من السيرفر..." />
+            <Header title="NEXUS" fact="نسخة 1.3" intro="ثواني وبنجهز حسابك من السيرفر..." />
         </div></FileCard>;
     }
     if (!user) return <AuthPage />;
     if (!profile) {
         return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-            <Header title="NEXUS" fact="نسخة 1.2" intro="آخر خطوة: عرفنا بنفسك. بياناتك بتتحفظ على السيرفر بأمان، وصورتك وصورة بطاقتك للإدارة بس." />
+            <Header title="NEXUS" fact="نسخة 1.3" intro="آخر خطوة: عرفنا بنفسك. بياناتك بتتحفظ على السيرفر بأمان، وصورتك وصورة بطاقتك للإدارة بس." />
             <Group label="بياناتك" heading="معلوماتك الأساسية">
                 <ProfileForm initial={null} submitLabel="احفظ وابدأ" onSave={saveProfile} />
             </Group>
@@ -1494,16 +1599,16 @@ export function App() {
         </div>
         <div onPointerDown={lpStart} onPointerUp={lpCancel} onPointerMove={lpCancel} onPointerLeave={lpCancel} onPointerCancel={lpCancel}
             onContextMenu={e => { if ((e.target as HTMLElement).closest('.file-title')) e.preventDefault(); }}>
-            <Header title="NEXUS" fact="نسخة 1.2" intro="وسيط بين اللي عنده بلايستيشن واللي عايز يلعب: اختار أقرب جهاز أو دراع أو لعبة، كلم صاحبها، وادفع كاش عند الاستلام." />
+            <Header title="NEXUS" fact="نسخة 1.3" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، كلم صاحبها، وادفع كاش عند الاستلام." />
         </div>
         <Callout title="متصل بسيرفر حقيقي" tone="note">الإعلانات والطلبات والشات حقيقية وبتتحفظ على السيرفر لحظة بلحظة، والدفع كاش عند الاستلام مع المندوب.</Callout>
         <Drawer open={menuOpen} profile={profile} myCount={myListings.length} email={user.email || ''} onClose={() => setMenuOpen(false)} onGuide={() => setGuideOpen(true)} onSupport={openSupport} onSignOut={() => { fbSignOut().catch(() => {}); }} />
         <Routes>
             <Route path="/" element={<Home consoles={consoles} onOpenConsole={setDetail} />} />
-            <Route path="/map" element={<MapPage consoles={consoles} onRequest={requestConsole} />} />
+            <Route path="/map" element={<MapPage consoles={consoles} onRequest={requestConsole} exactIds={exactMapIds} />} />
             <Route path="/add" element={<AddPage onAdd={addListing} blocked={!!rentalOrder} profile={profile} />} />
             <Route path="/admin" element={adminRole === 'courier'
-                ? <CourierPanel feed={courierFeed} myUid={uid} myName={profile.name}
+                ? <CourierPanel feed={courierFeed} myUid={uid} myName={profile.name} devices={devList}
                     onTake={courierTake} onPickedUp={courierPickedUp} onArrived={courierArrived} onDeliver={courierDeliver} onReturnDone={courierReturnDone}
                     onChat={(n, s, ch) => handleChat(n, s, ch)} onExit={() => { setAdminRole(null); window.location.hash = '/'; }} />
                 : adminRole === 'admin'
@@ -1542,8 +1647,8 @@ export function App() {
             </div>
         </div>}
         {errNote && <Callout title="حصلت مشكلة" tone="danger">{errNote}</Callout>}
-        <Caption>صور الأجهزة: بلايستيشن 5 بواسطة Soberian وبلايستيشن 4 بواسطة Evan-Amos والدراع بواسطة Viper polo، عبر ويكيميديا كومنز. أغلفة الألعاب رسوم توضيحية.</Caption>
-        <Closing>نسخة 1.2، متصلة بسيرفر Firebase حقيقي.</Closing>
+        <Caption>صور الأجهزة: بلايستيشن 5 بواسطة Soberian وبلايستيشن 4 بواسطة Evan-Amos ودراع بلايستيشن بواسطة Viper polo وإكس بوكس سيريس إكس بواسطة epredator ودراع إكس بوكس بواسطة UKER، عبر ويكيميديا كومنز. أغلفة الألعاب رسوم توضيحية.</Caption>
+        <Closing>نسخة 1.3، متصلة بسيرفر Firebase حقيقي.</Closing>
         </div>
     </FileCard>;
 }
