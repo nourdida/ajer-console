@@ -1,5 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
+import {
+    useAuthUser, useProfile, useDevices, useOrders, useMyChats, useMessages, useComplaints, useAllUsers,
+    fbSignUp, fbSignIn, fbSignOut, fbSaveProfile, fbAddDevice, fbUpdateDevice, fbDeleteDevice,
+    fbCreateOrder, fbUpdateOrder, fbDeleteOrder, fbOpenChat, fbSendMessage, fbAddComplaint, fbCloseComplaint, fbDeleteUser,
+    authErrorAr, dmChannelId, orderChannelId, ORDER_BUSY,
+    type DeviceDoc, type OrderDoc, type OrderStatus, type ChatDoc, type ProfileDoc, type AdminUserDoc, type ComplaintDoc,
+} from './fb';
 import 'leaflet/dist/leaflet.css';
 import {
     Callout, Caption, ChoiceRow, CloseButton, Closing, Facts, FileButton, FileCard, Group, Header,
@@ -17,7 +24,7 @@ type ConsoleListing = {
     area: 'زايد' | 'أكتوبر'; district: string;
     pricePerDay: number; deposit: number; rating: number; reviews: number; delivery: boolean;
     model: string; storage: string; controllers: number; games: string[]; includes: string;
-    photoKey?: string; mine?: boolean;
+    photoKey?: string; mine?: boolean; demo?: boolean; ownerId?: string; photoData?: string; createdAt?: number;
     status?: 'open' | 'courier' | 'rented'; requestAt?: number; courierMs?: number; dueMs?: number;
 };
 
@@ -36,8 +43,8 @@ type Complaint = { id: string; from: string; subject: string; detail: string; st
 type AdminUser = { id: string; name: string; phone: string; area: string; age: string; joined: string; status: string; listings: number; rentals: number };
 type AdminState = { addedUsers: AdminUser[]; deletedIds: string[]; closedIds: string[] };
 type Order = { id: string; requestId: string; title: string; owner: string; ownerPhone: string; pricePerDay: number; days: number; rent: number; deposit: number; createdMs: number; fromMs?: number; deliveryFee?: number; promo?: string; discount?: number; payMethod?: string; courierAccepted?: boolean };
-type Rental = { title: string; owner: string; ownerPhone: string; pricePerDay: number; days: number; startMs: number; returned: boolean };
-type ChatTarget = { name: string; suggestions?: string[] };
+type Rental = { title: string; owner: string; ownerPhone: string; pricePerDay: number; days: number; startMs: number; returned: boolean; channelId?: string };
+type ChatTarget = { name: string; suggestions?: string[]; channelId?: string };
 
 const PHOTOS: Record<string, string> = { ps5: ps5Photo, ps4: ps4Photo, dualsense: dualsensePhoto, fc: fcPhoto, god: godPhoto, spiderman: spidermanPhoto };
 const AVATARS = ['🎮', '👾', '🕹️', '⚡'];
@@ -157,11 +164,16 @@ const COND_CHECKS = ['الجهاز بيشتغل تمام', 'الدراعات س�
 const EMPTY_COND: CondState = { checks: COND_CHECKS.map(() => false), photos: [] };
 
 function dayStamp(ms: number) { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); }
-function busyDaysFor(num: number, bookings: BookingRange[]): Set<number> {
+function busyDaysFor(l: ConsoleListing | null | undefined, orders: OrderDoc[]): Set<number> {
     const s = new Set<number>();
+    if (!l) return s;
     const today = dayStamp(Date.now());
-    (SEED_BUSY[num] || []).forEach(([off, len]) => { for (let i = 0; i < len; i++) s.add(today + (off + i) * 86400000); });
-    bookings.filter(b => b.listingNumber === num).forEach(b => { for (let i = 0; i < b.days; i++) s.add(dayStamp(b.fromMs) + i * 86400000); });
+    if (l.demo || !l.ownerId) {
+        (SEED_BUSY[l.number] || []).forEach(([off, len]) => { for (let i = 0; i < len; i++) s.add(today + (off + i) * 86400000); });
+        return s;
+    }
+    orders.filter(o => o.deviceId === l.id && ORDER_BUSY.includes(o.status) && o.fromMs !== undefined)
+        .forEach(o => { for (let i = 0; i < o.days; i++) s.add(dayStamp(o.fromMs as number) + i * 86400000); });
     return s;
 }
 function condComplete(c: CondState | null) { return !!c && c.checks.every(Boolean) && c.photos.length >= 1; }
@@ -201,6 +213,10 @@ const SEED_LOG = [
 ];
 
 function yom(n: number) { return n === 1 ? 'يوم' : n === 2 ? 'يومين' : `${n} أيام`; }
+function statusAr(s: OrderStatus): string {
+    return ({ requested: 'الطلب عند المالك', accepted: 'بنستنى مندوب يستلمه', taken: 'مندوب استلم الطلب', pickedup: 'المندوب في الطريق للمستأجر', arrived: 'المندوب وصل عند المستأجر', delivered: 'قيد الإيجار', returning: 'الإرجاع جاري', returned: 'اترجع خلاص', declined: 'اترفض' } as Record<OrderStatus, string>)[s];
+}
+const STAGE_OF: Record<string, number> = { accepted: 0, taken: 0, pickedup: 2, arrived: 3, delivered: 3 };
 function areaName(a: string) { return a === 'زايد' ? 'الشيخ زايد' : '6 أكتوبر'; }
 
 const GAME_COLORS = ['#ff2ec4', '#2ee6d6', '#ffd54d', '#8b5cff', '#4dc3ff', '#7dff9a'];
@@ -216,9 +232,9 @@ function Stars({ rating, reviews }: { rating: number; reviews: number }) {
 
 function ConsoleCard({ listing, onOpen, onDelete, onTrack }: { listing: ConsoleListing; onOpen?: () => void; onDelete?: (id: string) => void; onTrack?: () => void }) {
     const inner = <>
-        <img className="nexus-thumb" src={PHOTOS[listing.photoKey || listing.kind.toLowerCase()]} alt={listing.kind === 'PS5' ? 'جهاز بلايستيشن 5 مع ذراع تحكم' : 'جهاز بلايستيشن 4 مع ذراع تحكم'} />
+        <img className="nexus-thumb" src={listing.photoData || PHOTOS[listing.photoKey || listing.kind.toLowerCase()]} alt={listing.kind === 'PS5' ? 'جهاز بلايستيشن 5 مع ذراع تحكم' : 'جهاز بلايستيشن 4 مع ذراع تحكم'} />
         <div className="nexus-card-body">
-            <div className="nexus-card-title"><span className="nexus-num">{listing.number}</span> {listing.title}</div>
+            <div className="nexus-card-title"><span className="nexus-num">{listing.number}</span> {listing.title}{listing.demo ? <span className="nexus-badge">تجريبي</span> : null}</div>
             <div className="nexus-muted">{listing.owner} · {areaName(listing.area)}، {listing.district}</div>
             <div className="nexus-muted"><Stars rating={listing.rating} reviews={listing.reviews} />' · توصيل بالمندوب'</div>
             {listing.games.length > 0 && <div className="nexus-chips">{listing.games.map((g, i) => <span key={g} className="nexus-chip" style={gameChipStyle(i)}>{g}</span>)}</div>}
@@ -257,23 +273,35 @@ function GearCard({ item, onRequest, onChat }: { item: GearItem; onRequest: () =
     </div>;
 }
 
-function ChatDialog({ name, suggestions, onClose }: { name: string; suggestions?: string[]; onClose: () => void }) {
+function ChatDialog({ name, suggestions, onClose, channelId, meUid, meName }: { name: string; suggestions?: string[]; onClose: () => void; channelId?: string; meUid?: string; meName?: string }) {
+    const live = useMessages(channelId);
     const [msgs, setMsgs] = useState<ChatMsg[]>([{ me: false, text: suggestions ? 'أهلًا! اسأل براحتك 🎮' : 'أهلًا! الجهاز متاح، اسأل براحتك 🎮' }]);
     const [text, setText] = useState('');
+    const [sendErr, setSendErr] = useState('');
+    const real = !!channelId && !!meUid;
     const sendText = (t: string) => {
         const v = t.trim();
         if (!v) return;
-        setMsgs(m => [...m, { me: true, text: v }]);
+        if (real) {
+            fbSendMessage(channelId as string, meUid as string, meName || 'مستخدم', v).catch((e) => { console.warn(e); setSendErr('الرسالة متبعتتش. اتأكد من النت وجرب تاني.'); });
+        } else {
+            setMsgs(m => [...m, { me: true, text: v }]);
+            setTimeout(() => setMsgs(m => [...m, { me: false, text: 'رد تجريبي: في النسخة الحقيقية الطرف التاني هيرد عليك هنا.' }]), 700);
+        }
         setText('');
-        setTimeout(() => setMsgs(m => [...m, { me: false, text: 'رد تجريبي: في النسخة الحقيقية الطرف التاني هيرد عليك هنا.' }]), 700);
     };
     const send = () => sendText(text);
+    const bubbles: ChatMsg[] = real
+        ? (live || []).map((m) => ({ me: m.from === meUid, text: m.text }))
+        : msgs;
     return <div className="nexus-overlay" role="dialog" aria-modal="true" aria-label={`محادثة مع ${name}`}>
         <div className="nexus-sheet">
             <div className="nexus-sheet-close"><CloseButton label="إغلاق" onClick={onClose} /></div>
             <h2 className="nexus-sheet-title">{name}</h2>
             <div className="nexus-chat">
-                {msgs.map((m, i) => <div key={i} className={m.me ? 'nexus-bubble nexus-bubble-me' : 'nexus-bubble'}>{m.text}</div>)}
+                {real && live === undefined && <Caption>بنحمّل الرسايل من السيرفر...</Caption>}
+                {real && live !== undefined && live.length === 0 && <Caption>مفيش رسايل لسه. اكتب أول رسالة.</Caption>}
+                {bubbles.map((m, i) => <div key={i} className={m.me ? 'nexus-bubble nexus-bubble-me' : 'nexus-bubble'}>{m.text}</div>)}
             </div>
             {suggestions && suggestions.length > 0 && <div className="nexus-chips nexus-suggest">
                 {suggestions.map(s => <button key={s} type="button" className="nexus-chip nexus-chip-btn" onClick={() => sendText(s)}>{s}</button>)}
@@ -282,7 +310,8 @@ function ChatDialog({ name, suggestions, onClose }: { name: string; suggestions?
                 <input className="nexus-chat-input" value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') send(); }} placeholder="اكتب رسالتك..." aria-label="اكتب رسالتك" />
                 <FileButton variant="primary" compact pill onClick={send}>ابعت</FileButton>
             </div>
-            <Caption>شات تجريبي: رسايلك بتفضل على جهازك ومفيش حد بيشوفها.</Caption>
+            {sendErr && <Caption>{sendErr}</Caption>}
+            <Caption>{real ? 'شات حقيقي على السيرفر: الطرف التاني بيشوف رسالتك في نفس اللحظة.' : 'شات تجريبي مع صاحب إعلان وهمي: رسايلك بتفضل على جهازك ومفيش حد بيشوفها.'}</Caption>
         </div>
     </div>;
 }
@@ -340,7 +369,7 @@ function Home({ consoles, gear, onOpenConsole, onRequestGear, onChat }: { consol
                     ? <Callout title="مفيش إعلانات بالفلتر ده" tone="note">جرّب فلتر تاني.</Callout>
                     : shownGear.map(g => <GearCard key={g.id} item={g} onRequest={() => onRequestGear(g)} onChat={() => onChat(g.owner)} />)}
             </>}
-            <Caption>كل الإعلانات دي بيانات تجريبية للتوضيح، مش إعلانات حقيقية.</Caption>
+            <Caption>الإعلانات اللي عليها علامة «تجريبي» وهمية للتوضيح. أي إعلان تاني حقيقي من مستخدم زيك، منشور على السيرفر.</Caption>
         </Group>
         {step !== null && <div className="nexus-overlay" role="dialog" aria-modal="true" aria-label="فلتر الإعلانات" onClick={closeSheet}>
             <div className="nexus-sheet" onClick={e => e.stopPropagation()}>
@@ -477,7 +506,7 @@ function ConsoleDetailPage({ listing, busy, onRequest, onChat }: { listing: Cons
         <Link className="file-button is-compact" data-variant="secondary" to="/">شوف الإعلانات</Link>
     </Group>;
     return <Group label="تفاصيل الجهاز" heading={listing.title}>
-        <img className="nexus-detail-photo" src={PHOTOS[listing.photoKey || listing.kind.toLowerCase()]} alt={listing.kind === 'PS5' ? 'جهاز بلايستيشن 5 مع ذراع تحكم' : 'جهاز بلايستيشن 4 مع ذراع تحكم'} />
+        <img className="nexus-detail-photo" src={listing.photoData || PHOTOS[listing.photoKey || listing.kind.toLowerCase()]} alt={listing.kind === 'PS5' ? 'جهاز بلايستيشن 5 مع ذراع تحكم' : 'جهاز بلايستيشن 4 مع ذراع تحكم'} />
         <div className="nexus-muted">{listing.owner} · {areaName(listing.area)}، {listing.district}</div>
         <div className="nexus-muted"><Stars rating={listing.rating} reviews={listing.reviews} />' · توصيل بالمندوب'</div>
         {listing.games.length > 0 && <div className="nexus-chips">{listing.games.map((g, i) => <span key={g} className="nexus-chip" style={gameChipStyle(i)}>{g}</span>)}</div>}
@@ -628,7 +657,7 @@ function MapPage({ consoles, onRequest }: { consoles: ConsoleListing[]; onReques
     </Group>;
 }
 
-function RequestPage({ target, hasOpenRequest, busy, onConfirm }: { target: { title: string; owner: string; ownerLine: string; pricePerDay: number; deposit: number; number: number } | null; hasOpenRequest: boolean; busy: Set<number>; onConfirm: (r: { days: number; rent: number; deposit: number; fromMs: number; deliveryFee: number; promo: string; discount: number; payMethod: string }) => void }) {
+function RequestPage({ target, hasOpenRequest, busy, onConfirm }: { target: { title: string; owner: string; ownerLine: string; pricePerDay: number; deposit: number; number: number; deviceId?: string; ownerId?: string; demo?: boolean } | null; hasOpenRequest: boolean; busy: Set<number>; onConfirm: (r: { days: number; rent: number; deposit: number; fromMs: number; deliveryFee: number; promo: string; discount: number; payMethod: string }) => void }) {
     const [days, setDays] = useState(2);
     const [fromMs, setFromMs] = useState<number | null>(null);
     const [payMethod, setPayMethod] = useState('كاش عند الاستلام');
@@ -649,7 +678,7 @@ function RequestPage({ target, hasOpenRequest, busy, onConfirm }: { target: { ti
     const total = rent - discount + deliveryFee + target.deposit;
     if (done) {
         return <Group label="طلب إيجار" heading="طلبك اتسجل">
-            <Callout title="دي تجربة، مفيش حاجة اتبعتت لحد" tone="note">في النسخة الحقيقية المالك هيأكد معاك الميعاد والمكان، وتقدر تكلمه من أيقونة الشات جنب الطلب في حسابك.</Callout>
+            <Callout title="طلبك اتبعت للمالك على السيرفر" tone="note">المالك هيشوف طلبك في حسابه في نفس اللحظة ويرد عليك: متاح أو مش متاح. تقدر تكلمه من زرار الشات جنب الطلب في صفحة حسابك، وتتابع كل التحديثات لايف من صفحة طلبك.</Callout>
             <Facts items={[
                 { label: 'الحاجة', value: target.title },
                 ...(fromMs !== null ? [{ label: 'يوم الاستلام', value: new Date(fromMs).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' }) }] : []),
@@ -659,7 +688,7 @@ function RequestPage({ target, hasOpenRequest, busy, onConfirm }: { target: { ti
                 { label: 'التوصيل بالمندوب', value: `${DELIVERY_FEE} ج.م` },
                 { label: 'التأمين (محجوز عند المنصة)', value: `${target.deposit} ج.م` },
                 { label: 'المطلوب عند الاستلام', value: `${total} ج.م` },
-                { label: 'طريقة الدفع', value: `${payMethod} (تجريبي)` },
+                { label: 'طريقة الدفع', value: payMethod },
                 { label: 'التتبع', value: 'وافقت على جهاز التتبع ضد السرقة' },
                 { label: 'العقد', value: 'وافقت على عقد الإيجار والشروط' },
             ]} />
@@ -687,7 +716,7 @@ function RequestPage({ target, hasOpenRequest, busy, onConfirm }: { target: { ti
         <Slider label="عدد الأيام" min={1} max={7} value={days} onChange={(v: number) => setDays(v)} describe={(v: number) => v === 1 ? 'يوم واحد' : yom(v)} />
         <Callout title="الاستلام والإرجاع دايمًا عن طريق مندوب المنصة" tone="note">مفيش استلام بنفسك: مندوب NEXUS بيستلم الجهاز من المالك، بيراجعه وبيحط فيه AirTag تتبع، وبيوصله ليك لحد الباب. وفي الإرجاع بياخده منك، بيتشيك عليه وبيشيل الـ AirTag ويرجعه لصاحبه. رسوم التوصيل {DELIVERY_FEE} ج.م.</Callout>
         <ChoiceRow label="طريقة الدفع" options={['كاش عند الاستلام', 'فودافون كاش', 'إنستاباي'].map(v => ({ value: v, label: v }))} value={payMethod} onChange={setPayMethod} />
-        <Caption>اختيار طريقة الدفع للتوضيح بس، مفيش دفع حقيقي بيحصل في التجربة دي. والتأمين بيتحجز عند المنصة مش عند المالك.</Caption>
+        <Caption>الدفع بيتم بينك وبين المندوب عند الاستلام (مفيش دفع إلكتروني جوه التطبيق لسه). والتأمين بيتحجز عند المنصة مش عند المالك.</Caption>
         <div className="nexus-promo-row">
             <input className="nexus-promo-input" dir="ltr" placeholder="كود الخصم" value={promoInput} onChange={e => setPromoInput(e.target.value)} aria-label="كود الخصم" />
             <FileButton variant="secondary" compact pill onClick={applyPromo}>طبق</FileButton>
@@ -718,14 +747,13 @@ function RequestPage({ target, hasOpenRequest, busy, onConfirm }: { target: { ti
     </Group>;
 }
 
-function AddPage({ onAdd, blocked }: { onAdd: (l: Omit<ConsoleListing, 'id' | 'number' | 'rating' | 'reviews'>) => void; blocked: boolean }) {
-    const [name, setName] = useState('');
-    const [phone, setPhone] = useState('');
+function AddPage({ onAdd, blocked, profile }: { onAdd: (l: { kind: 'PS5' | 'PS4'; model: string; storage: string; controllers: number; area: 'زايد' | 'أكتوبر'; district: string; games: string[]; includes: string; pricePerDay: number; deposit: number; photoKey?: string; photoData?: string }) => void; blocked: boolean; profile: UserProfile }) {
     const [kind, setKind] = useState<'PS5' | 'PS4'>('PS5');
     const [model, setModel] = useState('ستاندارد');
     const [storage, setStorage] = useState('825GB');
     const [controllers, setControllers] = useState(2);
     const [photoKey, setPhotoKey] = useState('ps5');
+    const [photoData, setPhotoData] = useState('');
     const [area, setArea] = useState<'زايد' | 'أكتوبر'>('زايد');
     const [district, setDistrict] = useState('');
     const [games, setGames] = useState('');
@@ -737,19 +765,21 @@ function AddPage({ onAdd, blocked }: { onAdd: (l: Omit<ConsoleListing, 'id' | 'n
     const modelOptions = kind === 'PS5'
         ? [{ value: 'ستاندارد', label: 'ستاندارد' }, { value: 'ديجيتال', label: 'ديجيتال' }, { value: 'برو', label: 'برو' }]
         : [{ value: 'سليم', label: 'سليم' }, { value: 'برو', label: 'برو' }, { value: 'فات', label: 'فات' }];
+    const pickPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        fileToSmallDataUrl(f, 640, setPhotoData);
+    };
     const submit = () => {
         const p = parseInt(price, 10);
         const d = deposit.trim() === '' ? 0 : parseInt(deposit, 10);
-        if (name.trim().length < 2) { setError('اكتب اسمك الأول.'); return; }
-        if (phone.replace(/\D/g, '').length < 10) { setError('اكتب رقم موبايل صحيح من 11 رقم.'); return; }
         if (!Number.isFinite(p) || p < 10 || p > 5000) { setError('اكتب سعر اليوم بالجنيه، من 10 لـ 5000.'); return; }
         if (!Number.isFinite(d) || d < 0 || d > 50000) { setError('اكتب التأمين بالجنيه، أو سيبه 0 لو من غير تأمين.'); return; }
         setError('');
         onAdd({
-            kind, title: kind === 'PS5' ? `بلايستيشن 5 ${model}` : `بلايستيشن 4 ${model}`,
-            owner: name.trim(), area, district: district.trim() || areaName(area),
-            pricePerDay: p, deposit: d, delivery: true, mine: true, model, storage, controllers,
-            games: games.split(/[،,]/).map(g => g.trim()).filter(Boolean), includes: includes.trim(), photoKey,
+            kind, model, storage, controllers, area, district: district.trim() || areaName(area),
+            games: games.split(/[،,]/).map(g => g.trim()).filter(Boolean), includes: includes.trim(),
+            pricePerDay: p, deposit: d, photoKey: photoData ? undefined : photoKey, photoData: photoData || undefined,
         });
         setAdded(true);
     };
@@ -758,18 +788,25 @@ function AddPage({ onAdd, blocked }: { onAdd: (l: Omit<ConsoleListing, 'id' | 'n
         <Link className="file-button is-compact" data-variant="secondary" to="/profile">روح لحسابك</Link>
     </Group>;
     return <>
-        {added ? <Group label="تمام" heading="إعلانك اتضاف">
-            <Callout title="إعلانك ظهر في القائمة" tone="note">دي تجربة على جهازك بس. في النسخة الحقيقية إعلانك هيبان للناس اللي حواليك، وهيبقى عليه علامة قيد التأجير وتقدر تتبع مكانه.</Callout>
+        {added ? <Group label="تمام" heading="إعلانك اتنشر">
+            <Callout title="إعلانك بقى لايف على السيرفر" tone="note">كل مستخدم بيفتح التطبيق دلوقتي بيشوف إعلانك في القائمة وعلى الخريطة. أول ما حد يطلبه، الطلب هيظهرلك في صفحة حسابك.</Callout>
             <Link className="file-button is-compact" data-variant="secondary" to="/">شوف الإعلانات</Link>
         </Group> : <Group label="أضف إعلانك" heading="أجر جهازك للناس">
-            <TextField label="اسمك" value={name} onChange={(v: string) => setName(v)} />
-            <TextField label="رقم موبايلك" value={phone} onChange={(v: string) => setPhone(v)} />
+            <Paragraph>الإعلان هينزل باسمك ورقمك من حسابك: {profile.name} · <bdi>{profile.phone}</bdi></Paragraph>
             <ChoiceRow label="الجهاز" options={[{ value: 'PS5', label: 'PS5' }, { value: 'PS4', label: 'PS4' }]} value={kind} onChange={(v: string) => { const k = v as 'PS5' | 'PS4'; setKind(k); setModel(k === 'PS5' ? 'ستاندارد' : 'سليم'); setPhotoKey(k === 'PS5' ? 'ps5' : 'ps4'); }} />
             <ChoiceRow label="الموديل" options={modelOptions} value={model} onChange={(v: string) => setModel(v)} />
             <ChoiceRow label="المساحة" options={[{ value: '500GB', label: '500 جيجا' }, { value: '825GB', label: '825 جيجا' }, { value: '1TB', label: '1 تيرا' }, { value: '2TB', label: '2 تيرا' }]} value={storage} onChange={(v: string) => setStorage(v)} />
             <Slider label="عدد الدراعات" min={1} max={4} value={controllers} onChange={(v: number) => setControllers(v)} describe={(v: number) => v === 1 ? 'دراع واحد' : v === 2 ? 'دراعين' : `${v} دراعات`} />
-            <ChoiceRow label="صورة الإعلان" options={[{ value: kind === 'PS5' ? 'ps5' : 'ps4', label: 'صورة الجهاز' }, { value: 'dualsense', label: 'صورة دراع' }]} value={photoKey === 'dualsense' ? 'dualsense' : (kind === 'PS5' ? 'ps5' : 'ps4')} onChange={(v: string) => setPhotoKey(v)} />
-            <Caption>في النسخة الحقيقية هتصور جهازك وملحقاته بكاميرا الموبايل. في التجربة دي اختار صورة جاهزة.</Caption>
+            <div className="nexus-idphoto">
+                <span className="nexus-idphoto-label">صورة الجهاز (صوره بموبايلك)</span>
+                <label className="nexus-idphoto-drop">
+                    {photoData ? 'غيّر صورة الجهاز' : 'ارفع صورة جهازك'}
+                    <input type="file" accept="image/*" onChange={pickPhoto} aria-label="ارفع صورة الجهاز" style={{ display: 'none' }} />
+                </label>
+                {photoData ? <img className="nexus-idphoto-preview" src={photoData} alt="صورة الجهاز اللي رفعتها" /> : null}
+            </div>
+            {!photoData && <ChoiceRow label="أو اختار صورة جاهزة" options={[{ value: kind === 'PS5' ? 'ps5' : 'ps4', label: 'صورة الجهاز' }, { value: 'dualsense', label: 'صورة دراع' }]} value={photoKey === 'dualsense' ? 'dualsense' : (kind === 'PS5' ? 'ps5' : 'ps4')} onChange={(v: string) => setPhotoKey(v)} />}
+            <Caption>صورة حقيقية للجهاز بتخلي إعلانك أوضح وبتزود ثقة الناس فيك.</Caption>
             <TextField label="الألعاب اللي مع الجهاز (افصل بينها بفاصلة)" value={games} onChange={(v: string) => setGames(v)} />
             <TextField label="إيه اللي بييجي مع الجهاز؟ (شاحن، كابلات...)" value={includes} onChange={(v: string) => setIncludes(v)} />
             <ChoiceRow label="المنطقة" options={[{ value: 'زايد', label: 'الشيخ زايد' }, { value: 'أكتوبر', label: '6 أكتوبر' }]} value={area} onChange={(v: string) => setArea(v as 'زايد' | 'أكتوبر')} />
@@ -778,10 +815,9 @@ function AddPage({ onAdd, blocked }: { onAdd: (l: Omit<ConsoleListing, 'id' | 'n
             <Callout title="عمولة التطبيق 20 في المية" tone="note">التطبيق بياخد عمولة 20 في المية من سعر الإيجار بس، مش من التأمين. التأمين كله بيرجع للمستأجر.</Callout>
             {(() => { const pv = parseInt(price, 10); if (!Number.isFinite(pv) || pv <= 0) return null; const fee = Math.round(pv * COMMISSION); return <Callout title="احسبها على السعر اللي كتبته" tone="note">لو اليوم بـ {pv} ج.م: عمولة التطبيق {fee} ج.م عن كل يوم، وصافيلك {pv - fee} ج.م في اليوم. يعني لو اتأجر 3 أيام، صافيك {3 * (pv - fee)} ج.م من أصل {3 * pv} ج.م.</Callout>; })()}
             <TextField label="التأمين بالجنيه بيرجع (اكتب الرقم، أو سيبه فاضي)" value={deposit} onChange={(v: string) => setDeposit(v)} />
-            <Callout title="جهازك فيه تتبع ضد السرقة" tone="note">في النسخة الحقيقية جهازك هيبقى فيه GPS أو AirTag، والمستأجر بيشوف ده ويوافق عليه قبل ما يأكد الطلب، وتقدر تتبع مكان جهازك طول ما هو بره.</Callout>
+            <Callout title="جهازك فيه تتبع ضد السرقة" tone="note">مندوب المنصة بيركب AirTag في الجهاز وهو واصل للمستأجر وبيشيله عند الإرجاع، والمستأجر بيشوف ده ويوافق عليه قبل ما يأكد الطلب، وتقدر تتبع مكان جهازك طول ما هو بره.</Callout>
             {error && <Callout title="راجع البيانات" tone="danger">{error}</Callout>}
             <FileButton variant="primary" pill onClick={submit}>انشر الإعلان</FileButton>
-            <Caption>بياناتك بتفضل على جهازك في التجربة دي. صورة البطاقة هتتطلب في نسخة لاحقة بشكل آمن.</Caption>
         </Group>}
     </>;
 }
@@ -811,18 +847,26 @@ function CountdownRing({ frac, label, sub }: { frac: number; label: string; sub:
     </div>;
 }
 
-function OrderPage({ order, handoverCheck, onHandoverCheck, onChat }: { order: Order | null; handoverCheck: CondState; onHandoverCheck: (v: CondState) => void; onChat: (name: string, suggestions?: string[]) => void }) {
-    const now = useNow(1000);
+function OrderPage({ order, onHandoverCheck, onChat }: { order: OrderDoc | null; onHandoverCheck: (v: CondState) => void; onChat: (name: string, suggestions?: string[], channelId?: string) => void }) {
     if (!order) return <Group label="تتبع طلبك" heading="مفيش طلب شغال دلوقتي">
-        <Callout title="لما تطلب جهاز هتلاقي التتبع هنا" tone="note">اطلب جهاز من الإعلانات، وأول ما تؤكد الطلب هتقدر تتابع المندوب خطوة بخطوة من الصفحة دي.</Callout>
+        <Callout title="لما تطلب جهاز هتلاقي التتبع هنا" tone="note">اطلب جهاز من الإعلانات، وأول ما المالك يقبل طلبك هتقدر تتابع المندوب خطوة بخطوة من الصفحة دي، لايف.</Callout>
         <Link className="file-button is-compact" data-variant="secondary" to="/">شوف الإعلانات</Link>
     </Group>;
-    const stage = Math.min(ORDER_STEPS.length - 1, Math.floor((now - order.createdMs) / STEP_MS));
-    const arrived = stage === ORDER_STEPS.length - 1;
+    if (order.status === 'requested') return <Group label="تتبع طلبك" heading={order.title}>
+        <Callout title="طلبك عند المالك دلوقتي" tone="note">استنى رده: لو قال متاح، المندوب هيتحرك وهتلاقي الخطوات بتتحدث هنا لايف. لو رفض، الطلب هيشيل نفسه وتقدر تطلب جهاز تاني.</Callout>
+        <Facts items={[
+            { label: 'المالك', value: order.ownerName },
+            { label: 'المدة', value: yom(order.days) },
+            { label: 'المطلوب عند الاستلام', value: `${order.rent + order.deposit + (order.deliveryFee || 0) - (order.discount || 0)} ج.م` },
+        ]} />
+    </Group>;
+    const stage = STAGE_OF[order.status] ?? 0;
+    const arrived = order.status === 'arrived' || order.status === 'delivered';
     const widths = [12, 40, 70, 100];
+    const check = order.handoverCheck || EMPTY_COND;
     return <>
         <Group label="تتبع طلبك" heading={order.title}>
-            <Paragraph>{order.owner} · {yom(order.days)} · المطلوب عند الاستلام {order.rent + order.deposit + (order.deliveryFee || 0) - (order.discount || 0)} ج.م{!order.payMethod || order.payMethod === 'كاش عند الاستلام' ? ' كاش' : ` (${order.payMethod} - تجريبي)`}</Paragraph>
+            <Paragraph>{order.ownerName} · {yom(order.days)} · المطلوب عند الاستلام {order.rent + order.deposit + (order.deliveryFee || 0) - (order.discount || 0)} ج.م{!order.payMethod || order.payMethod === 'كاش عند الاستلام' ? ' كاش' : ` (${order.payMethod})`}</Paragraph>
             <div className="nexus-progress" role="img" aria-label={`طلبك في خطوة ${stage + 1} من ${ORDER_STEPS.length}`}><div style={{ width: `${widths[stage]}%` }} /></div>
             <div className="nexus-steps">
                 {ORDER_STEPS.map((s, i) => <div key={i} className={`nexus-step${i < stage ? ' is-done' : ''}${i === stage ? ' is-now' : ''}`}>
@@ -830,35 +874,33 @@ function OrderPage({ order, handoverCheck, onHandoverCheck, onChat }: { order: O
                     <span className="nexus-step-text">{s}</span>
                 </div>)}
             </div>
-            {order.courierAccepted
-                ? <div className="nexus-status-line"><span className="nexus-dot nexus-dot-pink" />مندوب استلم طلبك: {COURIER.name} شغال عليه دلوقتي</div>
+            {order.courierName
+                ? <div className="nexus-status-line"><span className="nexus-dot nexus-dot-pink" />مندوب استلم طلبك: {order.courierName} شغال عليه دلوقتي</div>
                 : <div className="nexus-status-line"><span className="nexus-dot nexus-dot-grey" />بنستنى مندوب يستلم طلبك</div>}
-            <Caption>تجربة بسرعة مضاعفة: كل خطوة بتاخد ١٥ ثانية. في النسخة الحقيقية المندوب هو اللي بيحدث الخطوات أول بأول.</Caption>
+            <Caption>الخطوات بتتحدث لايف: المندوب بيحدثها من لوحته وانت بتشوفها في نفس اللحظة.</Caption>
             {arrived && <>
                 <Callout title="المندوب وصل" tone="note">استلم جهازك وراجعه كويس قدام المندوب. علم على التشيك ليست وصوّر الجهاز: دي إثبات حالتك. زرار تأكيد التسليم مع المندوب في لوحته هو، وأول ما يدوسه العداد بتاعك بيبدأ.</Callout>
                 <h3 className="nexus-subhead">تشيك ليست حالة الجهاز عند الاستلام</h3>
-                <ConditionChecklist value={handoverCheck} onChange={onHandoverCheck} />
-                {!condComplete(handoverCheck)
-                    ? <Caption>علم على كل نقاط التشيك ليست وضيف صورة واحدة على الأقل للجهاز، وبعدها المندوب يأكد التسليم من لوحته.</Caption>
+                <ConditionChecklist value={check} onChange={onHandoverCheck} />
+                {!condComplete(check)
+                    ? <Caption>علم على كل نقاط التشيك ليست وضيف صورة واحدة على الأقل للجهاز، وبعدها المندوب يأكد التسليم من لوحته. التشيك ليست بتوصل للمندوب لحظة بلحظة.</Caption>
                     : <Caption>التشيك ليست كاملة. المندوب دلوقتي يقدر يأكد التسليم من لوحته.</Caption>}
             </>}
         </Group>
-        <Group label="المندوب معاك طول الطريق" heading={COURIER.name}>
+        {order.courierName && <Group label="المندوب معاك طول الطريق" heading={order.courierName}>
             <Facts items={[
-                { label: 'الاسم', value: COURIER.name },
-                { label: 'موبايل', value: COURIER.phone },
-                { label: 'الحالة', value: ORDER_STEPS[stage] },
+                { label: 'الاسم', value: order.courierName },
+                { label: 'الحالة', value: statusAr(order.status) },
             ]} />
             <div className="nexus-card-actions">
-                <a className="file-button is-compact" data-variant="primary" href={`tel:${COURIER.phone}`}>اتصل بالمندوب</a>
-                <FileButton variant="secondary" compact pill onClick={() => onChat(COURIER.name, COURIER_CHAT_SUGGESTIONS)}>ابعتله رسالة</FileButton>
+                <FileButton variant="secondary" compact pill onClick={() => onChat(order.courierName as string, COURIER_CHAT_SUGGESTIONS, orderChannelId(order.id))}>ابعتله رسالة</FileButton>
             </div>
-            <Caption>مندوب تجريبي ببيانات وهمية. في النسخة الحقيقية بيبقى مندوب NEXUS وتقدر تكلمه أو تبعتله في أي وقت لحد ما تستلم.</Caption>
-        </Group>
+            <Caption>الشات مع المندوب حقيقي على السيرفر، بيوصله في نفس اللحظة.</Caption>
+        </Group>}
     </>;
 }
 
-function ActiveRental({ rental, onReturn, onClear, returnCheck, onReturnCheck, onChat }: { rental: Rental; onReturn: () => void; onClear: () => void; returnCheck: CondState; onReturnCheck: (v: CondState) => void; onChat: (name: string, suggestions?: string[]) => void }) {
+function ActiveRental({ rental, onReturn, returnCheck, onReturnCheck, onChat }: { rental: Rental; onReturn: () => void; returnCheck: CondState; onReturnCheck: (v: CondState) => void; onChat: (name: string, suggestions?: string[], channelId?: string) => void }) {
     const now = useNow(30000);
     const endMs = rental.startMs + rental.days * 86400000;
     const remainMs = Math.max(0, endMs - now);
@@ -872,26 +914,25 @@ function ActiveRental({ rental, onReturn, onClear, returnCheck, onReturnCheck, o
     const remainLabel = remDays > 0 ? `${yom(remDays)} و${remHours} ساعة` : `${remHours} ساعة و${remMins} دقيقة`;
     return <Group label="إيجارك الحالي" heading={rental.title}>
         {rental.returned ? <>
-            <Callout title="اتسجل إرجاع بدري (تجريبي)" tone="note">المفروض يرجعلك {refund} ج.م من {rental.owner} فرق الأيام الباقية، غير التأمين.</Callout>
-            <FileButton variant="ghost" compact onClick={onClear}>إنهاء الإيجار ومسحه</FileButton>
+            <Callout title="طلب الإرجاع اتسجل" tone="note">المندوب جاي يستلم الجهاز منك، بيتشيك عليه وبيشيل الـ AirTag قدامك ويرجعه للمالك. لو رجعت بدري المفروض يرجعلك حوالي {refund} ج.م فرق الأيام الباقية، والتأمين المحجوز بيرجع كامل بعد المعاينة.</Callout>
         </> : <>
             <CountdownRing frac={frac} label={remainLabel} sub="فاضل على الإرجاع" />
             <Facts items={[
                 { label: 'المالك', value: rental.owner },
-                { label: 'موبايل المالك', value: rental.ownerPhone },
+                ...(rental.ownerPhone ? [{ label: 'موبايل المالك', value: rental.ownerPhone }] : []),
                 { label: 'المدة', value: yom(rental.days) },
                 { label: 'التتبع', value: 'وافقت على جهاز التتبع ضد السرقة' },
             ]} />
             <div className="nexus-card-actions">
-                <a className="file-button is-compact" data-variant="primary" href={`tel:${rental.ownerPhone}`}>اتصل بالمالك</a>
-                <FileButton variant="secondary" compact pill onClick={() => onChat(rental.owner, OWNER_CHAT_SUGGESTIONS)}>كلم {rental.owner}</FileButton>
+                {rental.ownerPhone ? <a className="file-button is-compact" data-variant="primary" href={`tel:${rental.ownerPhone}`}>اتصل بالمالك</a> : null}
+                <FileButton variant="secondary" compact pill onClick={() => onChat(rental.owner, OWNER_CHAT_SUGGESTIONS, rental.channelId)}>كلم {rental.owner}</FileButton>
             </div>
             <Caption>لو الجهاز محتاج باسورد عشان يتفتح، أو عايز تستأذن تضيف الأكونت بتاعك، كلم المالك من هنا.</Caption>
             <Callout title="لو رجعته بدري" tone="warning">لو سلمته دلوقتي بيرجعلك حوالي {refund} ج.م فرق الأيام الباقية، والتأمين المحجوز عند المنصة بيرجع لك كامل بعد المعاينة. مندوب المنصة بييجي يستلم الجهاز منك، بيتشيك عليه وبيشيل الـ AirTag قدامك ويرجعه للمالك.</Callout>
             <h3 className="nexus-subhead">تشيك ليست حالة الجهاز عند الإرجاع</h3>
             <ConditionChecklist value={returnCheck} onChange={onReturnCheck} />
-            <FileButton variant="secondary" compact pill disabled={!condComplete(returnCheck)} onClick={() => { if (condComplete(returnCheck)) onReturn(); }}>سجل إرجاع بدري</FileButton>
-            {!condComplete(returnCheck) && <Caption>كمّل تشيك ليست الإرجاع وضيف صورة واحدة على الأقل عشان تسجل الإرجاع.</Caption>}
+            <FileButton variant="secondary" compact pill disabled={!condComplete(returnCheck)} onClick={() => { if (condComplete(returnCheck)) onReturn(); }}>سجل الإرجاع واطلب المندوب</FileButton>
+            {!condComplete(returnCheck) && <Caption>كمّل تشيك ليست الإرجاع وضيف صورة واحدة على الأقل عشان تسجل الإرجاع. المندوب بيشوفها لحظة بلحظة.</Caption>}
         </>}
         <Caption>العداد بيعد لحظة بلحظة من لحظة الاستلام.</Caption>
     </Group>;
@@ -956,21 +997,20 @@ function ProfileForm({ initial, submitLabel, onSave }: { initial: UserProfile | 
         <Caption>صورة البطاقة مطلوبة عشان الأمان، ومبيشوفهاش أي مستخدم خالص - إدارة التطبيق بس اللي بتشوفها.</Caption>
         {error && <Callout title="راجع البيانات" tone="danger">{error}</Callout>}
         <FileButton variant="primary" pill onClick={save}>{submitLabel}</FileButton>
-        <Caption>بياناتك بتفضل على جهازك بس في التجربة دي، ومبتتشاركش مع حد.</Caption>
+        <Caption>بياناتك بتتحفظ على سيرفر Firebase بأمان. صورتك وصورة بطاقتك مبيشوفهمش أي مستخدم، إدارة التطبيق بس.</Caption>
     </>;
 }
 
-function ProfilePage({ profile, requests, myListings, rental, returnCheck, onReturnCheck, onEditProfile, onReturn, onClearRental, onCancelRequest, onDeleteListing, onChat, onTrack, onLenderAnswer, onPickedUp, onSupport, onComplain }: {
-    profile: UserProfile; requests: Request[]; myListings: ConsoleListing[]; rental: Rental | null;
-    returnCheck: CondState; onReturnCheck: (v: CondState) => void;
-    onEditProfile: () => void; onReturn: () => void; onClearRental: () => void; onCancelRequest: (id: string) => void;
-    onDeleteListing: (id: string) => void; onChat: (name: string, suggestions?: string[]) => void; onTrack: (l: ConsoleListing) => void;
-    onLenderAnswer: (id: string, available: boolean) => void; onPickedUp: (id: string) => void; onSupport: () => void; onComplain: () => void;
+function ProfilePage({ profile, myUid, email, myOrders, incoming, myListings, orders, rentalOrder, chats, onEditProfile, onReturn, onReturnCheck, onCancelRequest, onDeleteListing, onChat, onTrack, onOwnerAnswer, onOpenChat, onSupport, onComplain, onSignOut }: {
+    profile: UserProfile; myUid: string; email: string; myOrders: OrderDoc[]; incoming: OrderDoc[]; myListings: ConsoleListing[]; orders: OrderDoc[]; rentalOrder: OrderDoc | null; chats: ChatDoc[];
+    onEditProfile: () => void; onReturn: () => void; onReturnCheck: (v: CondState) => void; onCancelRequest: (id: string) => void;
+    onDeleteListing: (id: string) => void; onChat: (name: string, suggestions?: string[], channelId?: string) => void; onTrack: (l: ConsoleListing) => void;
+    onOwnerAnswer: (o: OrderDoc, ok: boolean) => void; onOpenChat: (c: ChatDoc) => void; onSupport: () => void; onComplain: () => void; onSignOut: () => void;
 }) {
-    const now = useNow(5000);
-    useEffect(() => {
-        myListings.forEach(l => { if (l.status === 'courier' && l.courierMs !== undefined && l.courierMs <= now) onPickedUp(l.id); });
-    }, [now]);
+    const doneCount = myOrders.filter(o => o.status === 'returned').length;
+    const openRequests = myOrders.filter(o => o.status === 'requested');
+    const declined = myOrders.filter(o => o.status === 'declined');
+    const chatName = (c: ChatDoc) => myUid === c.ownerId ? (c.renterName || 'مستأجر') : (c.kind === 'order' ? (c.courierName || 'المندوب') : (c.ownerName || 'المالك'));
     return <>
         <Group label="حسابك" heading={`أهلًا ${profile.name}`}>
             <div className="nexus-me">
@@ -979,63 +1019,83 @@ function ProfilePage({ profile, requests, myListings, rental, returnCheck, onRet
                     <div className="nexus-card-title">{profile.name}</div>
                     <div className="nexus-muted">{profile.age} سنة · <bdi>{profile.phone}</bdi></div>
                     <div className="nexus-muted">{profile.address}</div>
+                    <div className="nexus-muted"><bdi>{email}</bdi></div>
                 </div>
                 <FileButton variant="secondary" compact pill onClick={onEditProfile}>عدل بياناتك</FileButton>
             </div>
             <Facts items={[
-                { label: 'إيجاراتك', value: '3 (تجريبي)' },
+                { label: 'إيجاراتك المكتملة', value: `${doneCount}` },
                 { label: 'مستواك', value: 'برونزي' },
-                { label: 'الباقي على فضي', value: 'إيجارين' },
+                { label: 'الباقي على فضي', value: 'إيجارين (تجريبي)' },
             ]} />
             <div className="nexus-progress" role="img" aria-label="وصلت لـ 60 في المية من الطريق للمستوى الفضي"><div style={{ width: '60%' }} /></div>
         </Group>
-        {rental && <ActiveRental rental={rental} onReturn={onReturn} onClear={onClearRental} returnCheck={returnCheck} onReturnCheck={onReturnCheck} onChat={onChat} />}
-        {requests.length > 0 && <Group label="طلباتك" heading>
-            {requests.map(r => <div key={r.id} className="nexus-card">
+        {rentalOrder && <ActiveRental
+            rental={{ title: rentalOrder.title, owner: rentalOrder.ownerName, ownerPhone: rentalOrder.ownerPhone || '', pricePerDay: rentalOrder.pricePerDay, days: rentalOrder.days, startMs: rentalOrder.deliveredAt || rentalOrder.createdMs, returned: rentalOrder.status === 'returning', channelId: rentalOrder.deviceId ? dmChannelId(rentalOrder.deviceId, myUid) : undefined }}
+            onReturn={onReturn} returnCheck={rentalOrder.returnCheck || EMPTY_COND} onReturnCheck={onReturnCheck} onChat={onChat} />}
+        {declined.length > 0 && <Group label="طلبات اترفضت" heading>
+            {declined.map(o => <div key={o.id} className="nexus-card"><div className="nexus-card-body">
+                <div className="nexus-card-title">{o.title}</div>
+                <div className="nexus-muted">{o.ownerName} اعتذر عن الطلب ده. جهاز تاني؟</div>
+                <div className="nexus-card-actions">
+                    <Link className="file-button is-compact" data-variant="secondary" to="/">شوف الإعلانات</Link>
+                    <FileButton variant="ghost" compact onClick={() => onCancelRequest(o.id)}>امسح الطلب</FileButton>
+                </div>
+            </div></div>)}
+        </Group>}
+        {openRequests.length > 0 && <Group label="طلباتك المفتوحة" heading>
+            {openRequests.map(r => <div key={r.id} className="nexus-card">
                 <div className="nexus-card-body">
-                    <div className="nexus-card-title">إعلان رقم {r.listingNumber}: {r.title}</div>
-                    <div className="nexus-muted">{r.owner} · {yom(r.days)} · إيجار <bdi>{r.rent}</bdi> ج.م وتأمين <bdi>{r.deposit}</bdi> ج.م · كاش عند الاستلام</div>
+                    <div className="nexus-card-title">{r.title}</div>
+                    <div className="nexus-muted">{r.ownerName} · {yom(r.days)} · إيجار <bdi>{r.rent}</bdi> ج.م وتأمين <bdi>{r.deposit}</bdi> ج.م</div>
+                    <div className="nexus-status-line"><span className="nexus-dot nexus-dot-grey" />{statusAr(r.status)}</div>
                     <div className="nexus-card-actions">
-                        <Link className="file-button is-compact" data-variant="primary" to="/order">تتبع طلبك لايف</Link>
-                        <FileButton variant="secondary" compact pill onClick={() => onChat(r.owner)}>كلم {r.owner}</FileButton>
+                        <Link className="file-button is-compact" data-variant="primary" to="/order">تابع طلبك</Link>
+                        {r.deviceId && <FileButton variant="secondary" compact pill onClick={() => onChat(r.ownerName, undefined, dmChannelId(r.deviceId as string, myUid))}>كلم {r.ownerName}</FileButton>}
                         <FileButton variant="ghost" compact onClick={() => onCancelRequest(r.id)}>الغي الطلب</FileButton>
                     </div>
                 </div>
             </div>)}
-            <Caption>طلبات تجريبية محفوظة على جهازك بس.</Caption>
+            <Caption>الطلب بيتسجل على السيرفر والمالك بيشوفه في حسابه في نفس اللحظة.</Caption>
+        </Group>}
+        {incoming.length > 0 && <Group label="طلبات على أجهزتك" heading>
+            {incoming.map(o => <div key={o.id} className="nexus-notice">
+                <div className="nexus-card-title">حد عايز يأجر جهازك</div>
+                <div className="nexus-muted">{o.renterName} طلب {o.title} لمدة {yom(o.days)} · إيجار <bdi>{o.rent}</bdi> ج.م{o.fromMs ? ` · يستلم يوم ${new Date(o.fromMs).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}` : ''}</div>
+                <div className="nexus-muted">جهازك متاح للإيجار دلوقتي؟</div>
+                <div className="nexus-card-actions">
+                    <FileButton variant="primary" compact pill onClick={() => onOwnerAnswer(o, true)}>متاح</FileButton>
+                    <FileButton variant="ghost" compact onClick={() => onOwnerAnswer(o, false)}>مش متاح دلوقتي</FileButton>
+                    {o.deviceId && <FileButton variant="secondary" compact pill onClick={() => onChat(o.renterName, undefined, dmChannelId(o.deviceId as string, o.renterId))}>كلم {o.renterName}</FileButton>}
+                </div>
+            </div>)}
         </Group>}
         {myListings.length > 0 && <Group label="إعلاناتك" heading>
             {myListings.map(l => {
-                const requested = l.status === 'open' && l.requestAt !== undefined && l.requestAt <= now;
+                const active = orders.find(o => o.deviceId === l.id && ORDER_BUSY.includes(o.status));
                 return <div key={l.id}>
-                    {requested && <div className="nexus-notice">
-                        <div className="nexus-card-title">حد عايز يأجر جهازك</div>
-                        <div className="nexus-muted">مستأجر طلب {l.title} لمدة يومين. جهازك متاح للإيجار دلوقتي؟</div>
-                        <div className="nexus-card-actions">
-                            <FileButton variant="primary" compact pill onClick={() => onLenderAnswer(l.id, true)}>متاح</FileButton>
-                            <FileButton variant="ghost" compact onClick={() => onLenderAnswer(l.id, false)}>مش متاح دلوقتي</FileButton>
-                        </div>
-                    </div>}
                     <ConsoleCard listing={l} onDelete={l.status === 'rented' ? undefined : onDeleteListing} onTrack={() => onTrack(l)} />
-                    {l.status === 'courier' && <div className="nexus-status-line"><span className="nexus-dot nexus-dot-pink" />المندوب في طريقه يستلم الجهاز منك</div>}
-                    {l.status === 'rented' && <div className="nexus-status-line"><span className="nexus-dot nexus-dot-red" />قيد الإيجار{l.dueMs ? ` · بيرجع يوم ${new Date(l.dueMs).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}` : ''}</div>}
+                    {l.status === 'rented' && <div className="nexus-status-line"><span className="nexus-dot nexus-dot-red" />قيد الإيجار{active ? ` · ${statusAr(active.status)}` : ''}</div>}
+                    {active && l.status !== 'rented' && <div className="nexus-status-line"><span className="nexus-dot nexus-dot-pink" />{statusAr(active.status)} · المستأجر: {active.renterName}</div>}
                 </div>;
             })}
             <Caption>الإعلان المؤجر بيختفي من صفحة الإعلانات العامة، وانت بس اللي شايفه هنا. تقدر تتبع مكان جهازك طول ما هو بره.</Caption>
         </Group>}
+        {(() => { const visibleChats = chats.filter(c => !c.id.startsWith('order_') || orders.some(o => o.id === c.id.slice(6))); return visibleChats.length > 0 && <Group label="الرسايل" heading>
+            {visibleChats.map(c => <div key={c.id} className="nexus-card nexus-user-row" role="button" tabIndex={0} onClick={() => onOpenChat(c)} onKeyDown={e => { if (e.key === 'Enter') onOpenChat(c); }}>
+                <div className="nexus-card-body">
+                    <div className="nexus-card-title">{chatName(c)}</div>
+                    <div className="nexus-muted">{c.deviceTitle || 'محادثة'}{c.lastText ? ` · ${c.lastText}` : ''}</div>
+                </div>
+            </div>)}
+        </Group>; })()}
         <Group label="طبقات النجوم" heading="كل ما تأجر أكتر، تكسب أكتر">
             <Rows>
                 <Row number={1} name="برونزي" detail="من أول إيجار" value="شارة مؤجر جديد" />
                 <Row number={2} name="فضي" detail="خمس إيجارات مكتملة" value="خصم 5 في المية من العمولة" />
                 <Row number={3} name="دهبي" detail="خمستاشر إيجار مكتمل" value="خصم 10 في المية وأولوية ظهور" />
             </Rows>
-        </Group>
-        <Group label="التقييمات" heading="كل طرف يقيّم التاني">
-            <Rows>
-                <Row number={1} name="مستأجر عن كريم" detail="الجهاز نضيف والتسليم كان أسرع مما توقعت" value="★ 5" valueKnown />
-                <Row number={2} name="كريم عن مستأجر" detail="رجع الجهاز في المعاد وبنفس الحالة" value="★ 5" valueKnown />
-            </Rows>
-            <Caption>تقييمات تجريبية للتوضيح.</Caption>
+            <Caption>الطبقات لسه بتتفعّل، التقييمات تحت تجريبية للتوضيح.</Caption>
         </Group>
         <Group label="خدمة العملاء" heading>
             <Paragraph>عندك مشكلة أو سؤال؟ كلم الدعم في أي وقت، أو قدم شكوى رسمية والإدارة تراجعها.</Paragraph>
@@ -1044,6 +1104,9 @@ function ProfilePage({ profile, requests, myListings, rental, returnCheck, onRet
                 <FileButton variant="ghost" compact onClick={onComplain}>قدم شكوى</FileButton>
             </div>
         </Group>
+        <div className="nexus-card-actions">
+            <FileButton variant="ghost" compact onClick={onSignOut}>سجل خروج من الحساب</FileButton>
+        </div>
     </>;
 }
 
@@ -1113,132 +1176,115 @@ function AdminGateDialog({ step, onRole, onClose }: { step: 'password' | 'role';
     </div>;
 }
 
-function CourierPanel({ order, profileName, handoverCheck, onAcceptOrder, onConfirmDelivery, onExit }: {
-    order: Order | null; profileName: string; handoverCheck: CondState;
-    onAcceptOrder: () => void; onConfirmDelivery: () => void; onExit: () => void;
+function CourierPanel({ feed, myUid, myName, onTake, onPickedUp, onArrived, onDeliver, onReturnDone, onChat, onExit }: {
+    feed: OrderDoc[]; myUid: string; myName: string;
+    onTake: (o: OrderDoc) => void; onPickedUp: (o: OrderDoc) => void; onArrived: (o: OrderDoc) => void;
+    onDeliver: (o: OrderDoc) => void; onReturnDone: (o: OrderDoc) => void;
+    onChat: (name: string, suggestions: string[], channelId: string) => void; onExit: () => void;
 }) {
-    const now = useNow(1000);
-    const [takenDemo, setTakenDemo] = useState<string[]>([]);
-    const stage = order ? Math.min(ORDER_STEPS.length - 1, Math.floor((now - order.createdMs) / STEP_MS)) : 0;
-    const arrived = !!order && stage === ORDER_STEPS.length - 1;
-    const demoJobs = [
-        { id: 'd1', title: 'بلايستيشن 5 ديجيتال', from: 'المالك: كريم م. · الشيخ زايد، الحي الأول', to: 'المستأجر: عمر ج. · 6 أكتوبر، الحصري' },
-        { id: 'd2', title: 'بلايستيشن 4 برو', from: 'المالك: سارة م. · الشيخ زايد، كمبوند زيد', to: 'المستأجر: تامر ع. · 6 أكتوبر، حي المنتزه' },
-    ];
+    const mine = feed.filter(o => o.courierId === myUid && o.status !== 'accepted');
     return <>
-        <Group label="لوحة المندوب" heading={`أهلًا ${COURIER.name}`}>
+        <Group label="لوحة المندوب" heading={`أهلًا ${myName}`}>
             <Facts items={[
                 { label: 'الدور', value: 'مندوب توصيل' },
-                { label: 'الحالة', value: 'متاح لطلبات جديدة' },
-                { label: 'طلباتك النهارده', value: `${(order && order.courierAccepted ? 1 : 0) + takenDemo.length}` },
+                { label: 'طلبات جاهزة تستلمها', value: `${feed.filter(o => o.status === 'accepted').length}` },
+                { label: 'طلبات معاك دلوقتي', value: `${mine.length}` },
             ]} />
-            <Callout title="لوحة مندوب تجريبية" tone="warning">الطلبات هنا تجريبية على جهازك بس. في النسخة الحقيقية المندوب بيشوف الطلبات القريبة منه لايف، والمستأجر بييجيله إشعار أول ما تستلم طلبه.</Callout>
+            <Callout title="لوحة مندوب حقيقية" tone="note">الطلبات دي لايف من السيرفر: أي طلب المالك وافق عليه بيظهر هنا في نفس اللحظة، والمستأجر بيشوف تحديثاتك أول بأول.</Callout>
         </Group>
-        {order && <Group label="طلب من التطبيق" heading={order.title}>
-            <div className="nexus-card"><div className="nexus-card-body">
-                <div className="nexus-card-title">{order.title}</div>
-                <div className="nexus-muted">المستأجر: {profileName} · المالك: {order.owner}</div>
-                <div className="nexus-muted">{yom(order.days)} · المطلوب عند الاستلام {order.rent + order.deposit + (order.deliveryFee || 0) - (order.discount || 0)} ج.م</div>
-                {!order.courierAccepted
-                    ? <div className="nexus-card-actions"><FileButton variant="primary" compact pill onClick={onAcceptOrder}>استلم الطلب ده</FileButton></div>
-                    : <>
-                        <div className="nexus-status-line"><span className="nexus-dot nexus-dot-pink" />استلمت الطلب · الحالة: {ORDER_STEPS[stage]}</div>
-                        {arrived
-                            ? (condComplete(handoverCheck)
-                                ? <div className="nexus-card-actions"><FileButton variant="primary" compact pill onClick={onConfirmDelivery}>تأكيد التسليم للمستأجر</FileButton></div>
-                                : <>
-                                    <div className="nexus-card-actions"><FileButton variant="primary" compact pill disabled>تأكيد التسليم للمستأجر</FileButton></div>
-                                    <Caption>المستأجر لسه بيراجع الجهاز: التشيك ليست لازم تتكمل بصورة واحدة على الأقل قبل ما تأكد التسليم.</Caption>
-                                </>)
-                            : <Caption>لما توصل لباب المستأجر، زرار تأكيد التسليم هيظهر هنا. المستأجر بيراجع الجهاز وبيملى التشيك ليست قدامك.</Caption>}
-                    </>}
-            </div></div>
+        {feed.length === 0 && <Group label="الطلبات" heading="مفيش طلبات دلوقتي">
+            <Callout title="استنى طلبات جديدة" tone="note">أول ما مالك يوافق على طلب إيجار، الطلب هيظهر هنا على طول.</Callout>
         </Group>}
-        <Group label="طلبات توصيل قريبة (تجريبية)" heading={`${demoJobs.length} طلب`}>
-            {demoJobs.map(j => <div key={j.id} className="nexus-card"><div className="nexus-card-body">
-                <div className="nexus-card-title">{j.title}</div>
-                <div className="nexus-muted">{j.from}</div>
-                <div className="nexus-muted">{j.to}</div>
-                <div className="nexus-muted">رسوم التوصيل: {DELIVERY_FEE} ج.م · التأمين محجوز عند المنصة</div>
-                {takenDemo.includes(j.id)
-                    ? <div className="nexus-status-line"><span className="nexus-dot nexus-dot-pink" />استلمت الطلب ده · المستأجر شاف "مندوب استلم طلبك"</div>
-                    : <div className="nexus-card-actions"><FileButton variant="secondary" compact pill onClick={() => setTakenDemo(t => [...t, j.id])}>استلم الطلب ده</FileButton></div>}
-            </div></div>)}
-            <Caption>طلبات وهمية للتوضيح. في النسخة الحقيقية الطلبات بتتحدث لايف من السيرفر.</Caption>
-        </Group>
+        {feed.map(o => <Group key={o.id} label={o.courierId === myUid ? 'طلب معاك' : 'طلب جديد'} heading={o.title}>
+            <div className="nexus-card"><div className="nexus-card-body">
+                <div className="nexus-card-title">{o.title}</div>
+                <div className="nexus-muted">المالك: {o.ownerName}{o.ownerPhone ? <> · <bdi>{o.ownerPhone}</bdi></> : null}</div>
+                <div className="nexus-muted">المستأجر: {o.renterName}{o.renterPhone ? <> · <bdi>{o.renterPhone}</bdi></> : null}</div>
+                <div className="nexus-muted">{yom(o.days)} · المطلوب عند الاستلام {o.rent + o.deposit + (o.deliveryFee || 0) - (o.discount || 0)} ج.م</div>
+                <div className="nexus-status-line"><span className="nexus-dot nexus-dot-pink" />{statusAr(o.status)}</div>
+                {o.status === 'accepted' && <div className="nexus-card-actions">
+                    <FileButton variant="primary" compact pill onClick={() => onTake(o)}>استلم الطلب ده</FileButton>
+                </div>}
+                {o.status === 'taken' && <>
+                    <Caption>روح للمالك، راجع الجهاز قدامه، ركّب الـ AirTag، وبعدين أكد الاستلام.</Caption>
+                    <div className="nexus-card-actions">
+                        <FileButton variant="primary" compact pill onClick={() => onPickedUp(o)}>استلمت الجهاز من المالك</FileButton>
+                    </div>
+                </>}
+                {o.status === 'pickedup' && <>
+                    <Caption>اتحرك للمستأجر. لما توصل لبابه دوس وصلت.</Caption>
+                    <div className="nexus-card-actions">
+                        <FileButton variant="primary" compact pill onClick={() => onArrived(o)}>وصلت عند المستأجر</FileButton>
+                        <FileButton variant="secondary" compact pill onClick={() => onChat(o.renterName, COURIER_CHAT_SUGGESTIONS, orderChannelId(o.id))}>كلم المستأجر</FileButton>
+                    </div>
+                </>}
+                {o.status === 'arrived' && <>
+                    {condComplete(o.handoverCheck || null)
+                        ? <div className="nexus-card-actions"><FileButton variant="primary" compact pill onClick={() => onDeliver(o)}>تأكيد التسليم للمستأجر</FileButton></div>
+                        : <>
+                            <div className="nexus-card-actions"><FileButton variant="primary" compact pill disabled>تأكيد التسليم للمستأجر</FileButton></div>
+                            <Caption>المستأجر لسه بيراجع الجهاز: التشيك ليست لازم تتكمل بصورة واحدة على الأقل قبل ما تأكد التسليم.</Caption>
+                        </>}
+                    <div className="nexus-card-actions">
+                        <FileButton variant="secondary" compact pill onClick={() => onChat(o.renterName, COURIER_CHAT_SUGGESTIONS, orderChannelId(o.id))}>كلم المستأجر</FileButton>
+                    </div>
+                </>}
+                {o.status === 'returning' && <>
+                    <Caption>المستأجر خلص: روح استلم الجهاز منه، اتشيك عليه وشيل الـ AirTag قدامه، وارجعه للمالك، وبعدين أكد الإرجاع.</Caption>
+                    <div className="nexus-card-actions">
+                        <FileButton variant="primary" compact pill onClick={() => onReturnDone(o)}>استلمت الجهاز وأنهيت الإيجار</FileButton>
+                        <FileButton variant="secondary" compact pill onClick={() => onChat(o.renterName, COURIER_CHAT_SUGGESTIONS, orderChannelId(o.id))}>كلم المستأجر</FileButton>
+                    </div>
+                </>}
+            </div></div>
+        </Group>)}
         <div className="nexus-card-actions">
             <FileButton variant="ghost" compact onClick={onExit}>خروج من لوحة المندوب</FileButton>
         </div>
     </>;
 }
 
-function AdminPage({ profile, myListings, requests, order, complaints, admin, onDeleteUser, onAddUser, onCloseComplaint }: {
-    profile: UserProfile; myListings: ConsoleListing[]; requests: Request[]; order: Order | null; complaints: Complaint[];
-    admin: AdminState; onDeleteUser: (id: string) => void; onAddUser: (u: AdminUser) => void; onCloseComplaint: (id: string) => void;
+function AdminPage({ users, complaints, orders, devices, onCloseComplaint, onDeleteUser }: {
+    users: AdminUserDoc[]; complaints: ComplaintDoc[]; orders: OrderDoc[]; devices: DeviceDoc[];
+    onCloseComplaint: (id: string) => void; onDeleteUser: (id: string) => void;
 }) {
-    const [selected, setSelected] = useState<AdminUser | 'me' | null>(null);
-    const [showAdd, setShowAdd] = useState(false);
-    const [newName, setNewName] = useState('');
-    const [newPhone, setNewPhone] = useState('');
-    const users = [...SEED_USERS.filter(u => !admin.deletedIds.includes(u.id)), ...admin.addedUsers.filter(u => !admin.deletedIds.includes(u.id))];
-    const allComplaints = [...complaints, ...SEED_COMPLAINTS];
-    const openComplaints = allComplaints.filter(c => c.status === 'مفتوحة' && !admin.closedIds.includes(c.id));
-    const rentedCount = myListings.filter(l => l.status === 'rented').length;
-    const addUser = () => {
-        if (newName.trim().length < 2 || newPhone.replace(/\D/g, '').length < 10) return;
-        onAddUser({ id: `a${Date.now()}`, name: newName.trim(), phone: newPhone.trim(), area: '—', age: '—', joined: 'النهارده', status: 'نشط', listings: 0, rentals: 0 });
-        setNewName('');
-        setNewPhone('');
-        setShowAdd(false);
-    };
+    const [selected, setSelected] = useState<AdminUserDoc | null>(null);
+    const activeOrders = orders.filter(o => ORDER_BUSY.includes(o.status) || o.status === 'requested');
+    const rentedCount = devices.filter(d => d.status === 'rented').length;
+    const openComplaints = complaints.filter(c => c.status === 'مفتوحة');
     return <>
         <Group label="لوحة الإدارة" heading="نظرة عامة">
             <Facts items={[
-                { label: 'المستخدمين المسجلين', value: `${users.length + 1}` },
-                { label: 'طلبات شغالة دلوقتي', value: `${(order ? 1 : 0) + 2} (فيه تجريبي)` },
-                { label: 'أجهزة قيد الإيجار', value: `${rentedCount + 3} (فيه تجريبي)` },
+                { label: 'المستخدمين المسجلين', value: `${users.length}` },
+                { label: 'الإعلانات المنشورة', value: `${devices.length}` },
+                { label: 'طلبات شغالة دلوقتي', value: `${activeOrders.length}` },
+                { label: 'أجهزة قيد الإيجار', value: `${rentedCount}` },
                 { label: 'شكاوى مفتوحة', value: `${openComplaints.length}` },
             ]} />
-            <Callout title="لوحة تحكم تجريبية" tone="warning">الأرقام والمستخدمين هنا أغلبهم بيانات وهمية للتوضيح. في النسخة الحقيقية كل حاجة بتتسجل لحظة بلحظة على السيرفر.</Callout>
+            <Callout title="الأرقام دي حقيقية" tone="note">كل الأرقام والمستخدمين والطلبات هنا لايف من السيرفر، بتتحدث لحظة بلحظة. سجل الدخول تحت لسه تجريبي.</Callout>
         </Group>
-        <Group label="المستخدمين" heading={`${users.length + 1} مسجل`}>
-            <div className="nexus-card nexus-user-row" role="button" tabIndex={0} onClick={() => setSelected('me')} onKeyDown={e => { if (e.key === 'Enter') setSelected('me'); }}>
-                <div className="nexus-card-body">
-                    <div className="nexus-card-title">{profile.name} <span className="nexus-badge">أنت</span></div>
-                    <div className="nexus-muted"><bdi>{profile.phone}</bdi> · {profile.address} · {myListings.length} إعلان</div>
-                </div>
-            </div>
+        <Group label="المستخدمين" heading={`${users.length} مسجل`}>
             {users.map(u => <div key={u.id} className="nexus-card nexus-user-row" role="button" tabIndex={0} onClick={() => setSelected(u)} onKeyDown={e => { if (e.key === 'Enter') setSelected(u); }}>
                 <div className="nexus-card-body">
-                    <div className="nexus-card-title">{u.name}{u.status !== 'نشط' ? <span className="nexus-muted"> · {u.status}</span> : null}</div>
-                    <div className="nexus-muted"><bdi>{u.phone}</bdi> · {u.area}</div>
-                    <div className="nexus-muted">سجل يوم {u.joined} · {u.listings} إعلان · {u.rentals} إيجار</div>
+                    <div className="nexus-card-title">{u.name}</div>
+                    <div className="nexus-muted"><bdi>{u.phone}</bdi> · {u.address}</div>
+                    <div className="nexus-muted"><bdi>{u.email || ''}</bdi> · {devices.filter(d => d.ownerId === u.id).length} إعلان</div>
                 </div>
             </div>)}
-            {showAdd ? <div className="nexus-card"><div className="nexus-card-body">
-                <TextField label="اسم المستخدم" value={newName} onChange={(v: string) => setNewName(v)} />
-                <TextField label="رقم موبايله" value={newPhone} onChange={(v: string) => setNewPhone(v)} />
-                <div className="nexus-card-actions">
-                    <FileButton variant="primary" compact pill onClick={addUser}>احفظ الحساب</FileButton>
-                    <FileButton variant="ghost" compact onClick={() => setShowAdd(false)}>إلغاء</FileButton>
-                </div>
-            </div></div> : <FileButton variant="secondary" compact pill onClick={() => setShowAdd(true)}>أضف حساب جديد</FileButton>}
         </Group>
         <Group label="الطلبات والإيجارات الحالية" heading>
+            {activeOrders.length === 0 && <Caption>مفيش طلبات شغالة دلوقتي.</Caption>}
             <Rows>
-                {order ? <Row number={1} name={`${order.title} (طلبك التجريبي)`} detail={`المستأجر: ${profile.name} · المالك: ${order.owner}`} value="شغال" valueKnown /> : null}
-                <Row number={order ? 2 : 1} name="بلايستيشن 5 ديجيتال" detail="المستأجر: عمر ج. · المالك: كريم م." value="المندوب في الطريق" valueKnown />
-                <Row number={order ? 3 : 2} name="بلايستيشن 4 برو" detail="المستأجر: سارة م. · المالك: تامر ع." value="قيد الإيجار" valueKnown />
+                {activeOrders.map((o, i) => <Row key={o.id} number={i + 1} name={o.title} detail={`المستأجر: ${o.renterName} · المالك: ${o.ownerName}`} value={statusAr(o.status)} valueKnown />)}
             </Rows>
-            <Caption>الطلبات دي تجريبية للتوضيح، ما عدا طلبك لو عندك طلب شغال.</Caption>
         </Group>
-        <Group label="الشكاوى" heading={`${allComplaints.length} شكوى`}>
-            {allComplaints.length === 0 && <Caption>مفيش شكاوى لحد دلوقتي.</Caption>}
-            {allComplaints.map(c => {
-                const closed = c.status !== 'مفتوحة' || admin.closedIds.includes(c.id);
+        <Group label="الشكاوى" heading={`${complaints.length} شكوى`}>
+            {complaints.length === 0 && <Caption>مفيش شكاوى لحد دلوقتي.</Caption>}
+            {complaints.map(c => {
+                const closed = c.status !== 'مفتوحة';
                 return <div key={c.id} className="nexus-card"><div className="nexus-card-body">
                     <div className="nexus-card-title">{c.subject}</div>
-                    <div className="nexus-muted">من {c.from} · {c.date}</div>
+                    <div className="nexus-muted">من {c.from} · {new Date(c.createdAt).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long' })}</div>
                     <div className="nexus-muted">{c.detail}</div>
                     <div className="nexus-card-actions">
                         <span className={closed ? 'nexus-chip' : 'nexus-chip nexus-chip-open'}>{closed ? 'مقفولة' : 'مفتوحة'}</span>
@@ -1249,54 +1295,42 @@ function AdminPage({ profile, myListings, requests, order, complaints, admin, on
         </Group>
         <Group label="سجل الدخول والخروج" heading>
             <Rows>
-                <Row number={1} name={`${profile.name} (أنت)`} detail="سجل دخول" value="دلوقتي" valueKnown />
-                {SEED_LOG.map((line, i) => <Row key={i} number={i + 2} name={line} detail="" value="" />)}
+                {SEED_LOG.map((line, i) => <Row key={i} number={i + 1} name={line} detail="" value="" />)}
             </Rows>
+            <Caption>السجل ده تجريبي للتوضيح لحد ما يتربط بالسيرفر في نسخة جاية.</Caption>
         </Group>
         {selected !== null && <div className="nexus-overlay" role="dialog" aria-modal="true" aria-label="بيانات المستخدم" onClick={() => setSelected(null)}>
             <div className="nexus-sheet" onClick={e => e.stopPropagation()}>
                 <div className="nexus-sheet-close"><CloseButton label="إغلاق" onClick={() => setSelected(null)} /></div>
-                {selected === 'me' ? <>
-                    <h2 className="nexus-sheet-title">{profile.name} (أنت)</h2>
-                    <Facts items={[
-                        { label: 'الموبايل', value: profile.phone },
-                        { label: 'السن', value: `${profile.age} سنة` },
-                        { label: 'العنوان', value: profile.address },
-                        { label: 'إعلاناته', value: `${myListings.length}` },
-                        { label: 'طلباته المفتوحة', value: `${requests.length}` },
-                    ]} />
-                    <div className="nexus-photo-compare">
-                        <div>
-                            <div className="nexus-idphoto-label">صورته الشخصية</div>
-                            {profile.photo ? <img className="nexus-idphoto-full" src={profile.photo} alt="الصورة الشخصية للمستخدم" /> : <div className="nexus-idphoto-empty">لسه ما رفعش صورة شخصية</div>}
-                        </div>
-                        <div>
-                            <div className="nexus-idphoto-label">صورة البطاقة</div>
-                            {profile.idPhoto ? <img className="nexus-idphoto-full" src={profile.idPhoto} alt="صورة بطاقة المستخدم" /> : <div className="nexus-idphoto-empty">لسه ما رفعش صورة بطاقة</div>}
-                        </div>
+                <h2 className="nexus-sheet-title">{selected.name}</h2>
+                <Facts items={[
+                    { label: 'الموبايل', value: selected.phone },
+                    { label: 'الإيميل', value: selected.email || '—' },
+                    { label: 'السن', value: `${selected.age} سنة` },
+                    { label: 'العنوان', value: selected.address },
+                    { label: 'إعلاناته', value: `${devices.filter(d => d.ownerId === selected.id).length}` },
+                    { label: 'طلباته', value: `${orders.filter(o => o.renterId === selected.id || o.ownerId === selected.id).length}` },
+                ]} />
+                <div className="nexus-photo-compare">
+                    <div>
+                        <div className="nexus-idphoto-label">صورته الشخصية</div>
+                        {selected.photo ? <img className="nexus-idphoto-full" src={selected.photo} alt="الصورة الشخصية للمستخدم" /> : <div className="nexus-idphoto-empty">لسه ما رفعش صورة شخصية</div>}
                     </div>
-                    <Caption>قارن الصورتين عشان تتأكد إن صاحب الحساب هو صاحب البطاقة. الصور دي بتظهر في لوحة الإدارة بس.</Caption>
-                </> : (() => { const u = selected as AdminUser; return <>
-                    <h2 className="nexus-sheet-title">{u.name}</h2>
-                    <Facts items={[
-                        { label: 'الموبايل', value: u.phone },
-                        { label: 'العنوان', value: u.area },
-                        { label: 'سجل يوم', value: u.joined },
-                        { label: 'الحالة', value: u.status },
-                        { label: 'إعلاناته', value: `${u.listings}` },
-                        { label: 'إيجاراته', value: `${u.rentals}` },
-                    ]} />
-                    <div className="nexus-idphoto-empty">صورة بطاقة تجريبية للتوضيح</div>
-                    <div className="nexus-card-actions">
-                        <FileButton variant="ghost" compact onClick={() => { onDeleteUser(u.id); setSelected(null); }}>احذف الحساب</FileButton>
+                    <div>
+                        <div className="nexus-idphoto-label">صورة البطاقة</div>
+                        {selected.idPhoto ? <img className="nexus-idphoto-full" src={selected.idPhoto} alt="صورة بطاقة المستخدم" /> : <div className="nexus-idphoto-empty">لسه ما رفعش صورة بطاقة</div>}
                     </div>
-                </>; })()}
+                </div>
+                <Caption>قارن الصورتين عشان تتأكد إن صاحب الحساب هو صاحب البطاقة. الصور دي بتظهر في لوحة الإدارة بس.</Caption>
+                <div className="nexus-card-actions">
+                    <FileButton variant="ghost" compact onClick={() => { onDeleteUser(selected.id); setSelected(null); }}>احذف الحساب</FileButton>
+                </div>
             </div>
         </div>}
     </>;
 }
 
-function Drawer({ open, profile, myCount, onClose, onGuide, onSupport }: { open: boolean; profile: UserProfile | null; myCount: number; onClose: () => void; onGuide: () => void; onSupport: () => void }) {
+function Drawer({ open, profile, myCount, email, onClose, onGuide, onSupport, onSignOut }: { open: boolean; profile: UserProfile | null; myCount: number; email?: string; onClose: () => void; onGuide: () => void; onSupport: () => void; onSignOut?: () => void }) {
     if (!open) return null;
     const item = (to: string, icon: IconName, label: string, end?: boolean) => <NavLink to={to} end={end} onClick={onClose} className="nexus-drawer-link"><Icon name={icon} size={24} /><span>{label}</span></NavLink>;
     return <div className="nexus-overlay" role="dialog" aria-modal="true" aria-label="القائمة" onClick={onClose}>
@@ -1318,9 +1352,45 @@ function Drawer({ open, profile, myCount, onClose, onGuide, onSupport }: { open:
                 {item('/profile', 'user', 'حسابك')}
                 <button type="button" className="nexus-drawer-link nexus-drawer-btn" onClick={() => { onClose(); onSupport(); }}><Icon name="headset" size={24} /><span>خدمة العملاء</span></button>
                 <button type="button" className="nexus-drawer-link nexus-drawer-btn" onClick={() => { onClose(); onGuide(); }}><Icon name="help" size={24} /><span>طريقة الاستخدام</span></button>
+                {onSignOut && <button type="button" className="nexus-drawer-link nexus-drawer-btn" onClick={() => { onClose(); onSignOut(); }}><Icon name="user" size={24} /><span>سجل خروج{email ? ` (${email})` : ''}</span></button>}
             </nav>
         </div>
     </div>;
+}
+
+const SHOT = typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_SHOT === '1';
+
+function AuthPage() {
+    const [mode, setMode] = useState<'login' | 'signup'>('signup');
+    const [email, setEmail] = useState('');
+    const [pw, setPw] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState('');
+    const submit = async () => {
+        if (busy) return;
+        const e = email.trim();
+        if (!e.includes('@')) { setErr('اكتب إيميل صحيح.'); return; }
+        if (pw.length < 6) { setErr('الباسورد لازم 6 حروف أو أرقام على الأقل.'); return; }
+        setBusy(true); setErr('');
+        try { if (mode === 'signup') await fbSignUp(e, pw); else await fbSignIn(e, pw); }
+        catch (x) { setErr(authErrorAr(x)); }
+        setBusy(false);
+    };
+    return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
+        <Header title="NEXUS" fact="نسخة تجريبية 1.1" intro="وسيط بين اللي عنده بلايستيشن واللي عايز يلعب: اختار أقرب جهاز، والمندوب يوصله لحد بابك." />
+        <Group label={mode === 'signup' ? 'حساب جديد' : 'تسجيل دخول'} heading={mode === 'signup' ? 'اعمل حسابك في دقيقة' : 'أهلًا برجوعك'}>
+            <span className="nexus-idphoto-label">الإيميل</span>
+            <input className="nexus-chat-input" dir="ltr" type="email" autoComplete="email" value={email} onChange={e => { setEmail(e.target.value); setErr(''); }} placeholder="name@gmail.com" aria-label="الإيميل" />
+            <span className="nexus-idphoto-label">الباسورد</span>
+            <input className="nexus-chat-input" dir="ltr" type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} value={pw} onChange={e => { setPw(e.target.value); setErr(''); }} onKeyDown={e => { if (e.key === 'Enter') submit(); }} placeholder="٦ حروف أو أرقام على الأقل" aria-label="الباسورد" />
+            {err && <Callout title="راجع البيانات" tone="danger">{err}</Callout>}
+            <FileButton variant="primary" pill disabled={busy} onClick={submit}>{busy ? 'ثواني...' : mode === 'signup' ? 'اعمل الحساب' : 'ادخل'}</FileButton>
+            <button type="button" className="nexus-linklike" onClick={() => { setMode(mode === 'signup' ? 'login' : 'signup'); setErr(''); }}>
+                {mode === 'signup' ? 'عندك حساب بالفعل؟ سجل دخولك' : 'أول مرة هنا؟ اعمل حساب جديد'}
+            </button>
+            <Caption>حسابك بيتسجل على سيرفر Firebase. بعد ما تعمل الحساب هنطلب صورتك الشخصية وصورة بطاقتك، وده مطلوب للأمان عشان كل طرف يبقى معروف.</Caption>
+        </Group>
+    </div></FileCard>;
 }
 
 function withDefaults(l: any): ConsoleListing {
@@ -1329,27 +1399,48 @@ function withDefaults(l: any): ConsoleListing {
 }
 
 export function App() {
-    const [myListingsRaw, setMyListings, listingsSaved] = useLocalState('nexus-my-listings.v1', [] as any[]);
-    const [requestsRaw, setRequests, requestsSaved] = useLocalState('nexus-requests.v1', [] as any[]);
-    const [profile, setProfile, profileSaved] = useLocalState('nexus-profile.v1', null as UserProfile | null);
-    const [order, setOrder, orderSaved] = useLocalState('nexus-order.v1', null as Order | null);
-    const [rental, setRental, rentalSaved] = useLocalState('nexus-rental.v2', null as Rental | null);
-    const [requestTarget, setRequestTarget] = useState<{ title: string; owner: string; ownerLine: string; pricePerDay: number; deposit: number; number: number } | null>(null);
+    const [requestTarget, setRequestTarget] = useState<{ title: string; owner: string; ownerLine: string; pricePerDay: number; deposit: number; number: number; deviceId?: string; ownerId?: string; demo?: boolean } | null>(null);
     const [chatWith, setChatWith] = useState<ChatTarget | null>(null);
     const [tracking, setTracking] = useState<ConsoleListing | null>(null);
     const [menuOpen, setMenuOpen] = useState(false);
     const [guideOpen, setGuideOpen] = useState(false);
     const [detail, setDetail] = useState<ConsoleListing | null>(null);
     const [editProfile, setEditProfile] = useState(false);
-    const [complaints, setComplaints, complaintsSaved] = useLocalState('nexus-complaints.v1', [] as Complaint[]);
-    const [bookings, setBookings, bookingsSaved] = useLocalState('nexus-bookings.v1', [] as BookingRange[]);
-    const [handoverCheck, setHandoverCheck, handoverCheckSaved] = useLocalState('nexus-check-handover.v1', EMPTY_COND as CondState);
-    const [returnCheck, setReturnCheck, returnCheckSaved] = useLocalState('nexus-check-return.v1', EMPTY_COND as CondState);
-    const [admin, setAdmin, adminSaved] = useLocalState('nexus-admin.v1', { addedUsers: [], deletedIds: [], closedIds: [] } as AdminState);
     const [complaintOpen, setComplaintOpen] = useState(false);
     const [gateStep, setGateStep] = useState<'none' | 'password' | 'role'>('none');
     const [adminRole, setAdminRole] = useState<null | 'courier' | 'admin'>(null);
+    const [demoNote, setDemoNote] = useState(false);
+    const [errNote, setErrNote] = useState('');
+    const user = useAuthUser();
+    const profileDoc = useProfile(user ? user.uid : undefined);
+    const devices = useDevices();
+    const ordersAll = useOrders();
+    const chats = useMyChats(user ? user.uid : undefined);
+    const adminUsers = useAllUsers(adminRole === 'admin');
+    const adminComplaints = useComplaints(adminRole === 'admin');
     const lpTimer = useRef<number | null>(null);
+
+    const run = (p: Promise<any>, msg: string) => p.catch((e) => { console.warn(e); setErrNote(msg); });
+
+    useEffect(() => {
+        if (!SHOT) return;
+        const q = new URLSearchParams(window.location.search);
+        if (q.get('shot_menu') === '1') setMenuOpen(true);
+        if (q.get('shot_gate') === 'password') setGateStep('password');
+        const ch = q.get('shot_chat');
+        if (ch) setChatWith({ name: q.get('shot_chatname') || 'محادثة', channelId: ch });
+        if (q.get('shot_demo') === '1') setDemoNote(true);
+        const sr = q.get('shot_role');
+        if (sr === 'courier' || sr === 'admin') setAdminRole(sr);
+    }, []);
+    useEffect(() => {
+        if (!SHOT || user !== null) return;
+        const q = new URLSearchParams(window.location.search);
+        const e = q.get('shot_email');
+        const p = q.get('shot_pw');
+        if (e && p) fbSignIn(e, p).catch((x) => console.warn('shot signin', x));
+    }, [user]);
+
     const lpStart = (e: React.PointerEvent) => {
         if (!(e.target as HTMLElement).closest('.file-title')) return;
         lpCancel();
@@ -1361,103 +1452,193 @@ export function App() {
         setGateStep('none');
         window.location.hash = '/admin';
     };
-    const myListings = myListingsRaw.map(withDefaults);
-    const requests: Request[] = requestsRaw.map(r => ({ owner: 'المالك', ...r }));
-    const consoles = [...SEED_CONSOLES, ...myListings].filter(l => l.status !== 'rented');
-    const addListing = (data: Omit<ConsoleListing, 'id' | 'number' | 'rating' | 'reviews'>) => {
-        if (!listingsSaved.ready) return;
-        const nextNumber = Math.max(consoles.reduce((m, l) => Math.max(m, l.number), 0), ...SEED_GEAR.map(g => g.number)) + 1;
-        setMyListings([...myListingsRaw, { ...data, id: `m${Date.now()}`, number: nextNumber, rating: 0, reviews: 0 }]);
+
+    const uid = user ? user.uid : '';
+    const orders = ordersAll || [];
+    const profile: UserProfile | null = profileDoc ? { name: profileDoc.name, age: profileDoc.age, phone: profileDoc.phone, avatar: profileDoc.avatar, address: profileDoc.address, photo: profileDoc.photo, idPhoto: profileDoc.idPhoto } : null;
+    const devList = devices || [];
+    const realListings: ConsoleListing[] = devList.map((d, i) => ({
+        id: d.id, number: 100 + (devList.length - i), kind: d.kind, title: d.title, owner: d.ownerName, ownerId: d.ownerId,
+        area: d.area, district: d.district, pricePerDay: d.pricePerDay, deposit: d.deposit, rating: d.rating, reviews: d.reviews,
+        delivery: d.delivery, model: d.model, storage: d.storage, controllers: d.controllers, games: d.games, includes: d.includes,
+        photoKey: d.photoKey, photoData: d.photoData, mine: d.ownerId === uid, status: d.status, createdAt: d.createdAt,
+    }));
+    const consoles: ConsoleListing[] = [...SEED_CONSOLES.map(l => ({ ...l, demo: true })), ...realListings.filter(l => l.status !== 'rented')];
+    const myListings = realListings.filter(l => l.ownerId === uid);
+    const myOrders = orders.filter(o => o.renterId === uid);
+    const incoming = orders.filter(o => o.ownerId === uid && o.status === 'requested');
+    const currentOrder = myOrders.find(o => ['accepted', 'taken', 'pickedup', 'arrived'].includes(o.status)) || null;
+    const rentalOrder = myOrders.find(o => o.status === 'delivered' || o.status === 'returning') || null;
+    const courierFeed = orders.filter(o => o.status === 'accepted' || (o.courierId === uid && [...ORDER_BUSY, 'returning' as OrderStatus].includes(o.status)));
+
+    const requestConsole = (l: ConsoleListing) => {
+        if (l.demo || !l.ownerId) { setDemoNote(true); return; }
+        setRequestTarget({ title: l.title, owner: l.owner, ownerLine: `${l.owner} · ${areaName(l.area)}، ${l.district}`, pricePerDay: l.pricePerDay, deposit: l.deposit, number: l.number, deviceId: l.id, ownerId: l.ownerId });
     };
-    const requestConsole = (l: ConsoleListing) => setRequestTarget({ title: l.title, owner: l.owner, ownerLine: `${l.owner} · ${areaName(l.area)}، ${l.district}`, pricePerDay: l.pricePerDay, deposit: l.deposit, number: l.number });
-    const requestGear = (g: GearItem) => setRequestTarget({ title: g.title, owner: g.owner, ownerLine: `${g.owner} · ${areaName(g.area)}، ${g.district}`, pricePerDay: g.pricePerDay, deposit: g.deposit, number: g.number });
-    const ready = listingsSaved.ready && requestsSaved.ready && profileSaved.ready && orderSaved.ready && rentalSaved.ready && complaintsSaved.ready && adminSaved.ready && bookingsSaved.ready && handoverCheckSaved.ready && returnCheckSaved.ready;
-    useEffect(() => {
-        if (!listingsSaved.ready) return;
-        if (myListingsRaw.some(l => l.requestAt === undefined || l.status === undefined)) {
-            setMyListings(myListingsRaw.map(l => ({ status: 'open', requestAt: Date.now() + 30000, ...l })));
+    const requestGear = () => setDemoNote(true);
+
+    const ensureDm = (channelId: string) => {
+        if (!user || !profile) return;
+        const parts = channelId.split('_');
+        const deviceId = parts[1];
+        const renterUid = parts.slice(2).join('_');
+        const d = devList.find(x => x.id === deviceId);
+        const chat: ChatDoc = {
+            id: channelId, kind: 'dm', deviceId, deviceTitle: d ? d.title : 'جهاز',
+            ownerId: d ? d.ownerId : (uid === renterUid ? '' : uid),
+            ownerName: d ? d.ownerName : (uid === renterUid ? 'المالك' : profile.name),
+            renterId: renterUid, renterName: uid === renterUid ? profile.name : (d ? '' : profile.name),
+            updatedAt: Date.now(),
+        };
+        run(fbOpenChat(chat), 'المحادثة ماتفتحتش. جرب تاني.');
+    };
+    const ensureOrderChat = (channelId: string) => {
+        if (!user || !profile) return;
+        const o = orders.find(x => orderChannelId(x.id) === channelId);
+        if (!o) return;
+        run(fbOpenChat({ id: channelId, kind: 'order', orderId: o.id, deviceTitle: o.title, renterId: o.renterId, renterName: o.renterName, courierId: o.courierId, courierName: o.courierName, updatedAt: Date.now() }), 'المحادثة ماتفتحتش. جرب تاني.');
+    };
+    const handleChat = (name: string, suggestions?: string[], channelId?: string) => {
+        if (channelId) {
+            if (channelId.startsWith('dm_')) ensureDm(channelId);
+            else ensureOrderChat(channelId);
         }
-    }, [listingsSaved.ready]);
-    const lenderAnswer = (id: string, available: boolean) => {
-        if (!listingsSaved.ready) return;
-        setMyListings(myListingsRaw.map(l => l.id === id
-            ? (available ? { ...l, status: 'courier', courierMs: Date.now() + 30000 } : { ...l, requestAt: Date.now() + 60000 })
-            : l));
+        setChatWith({ name, suggestions, channelId });
     };
-    const pickedUp = (id: string) => {
-        if (!listingsSaved.ready) return;
-        const next = myListingsRaw.map(l => l.id === id ? { ...l, status: 'rented', dueMs: Date.now() + 2 * 86400000 } : l);
-        setMyListings(next);
-        const found = next.map(withDefaults).find(l => l.id === id);
-        if (found) setTracking(found);
+    const openDmFor = (l: ConsoleListing) => handleChat(l.owner, undefined, dmChannelId(l.id, uid));
+    const chatNameOf = (c: ChatDoc) => uid === c.ownerId ? (c.renterName || 'مستأجر') : (c.kind === 'order' ? (c.courierName || 'المندوب') : (c.ownerName || 'المالك'));
+
+    const addListing = (data: { kind: 'PS5' | 'PS4'; model: string; storage: string; controllers: number; area: 'زايد' | 'أكتوبر'; district: string; games: string[]; includes: string; pricePerDay: number; deposit: number; photoKey?: string; photoData?: string }) => {
+        if (!user || !profile) return;
+        run(fbAddDevice({
+            kind: data.kind, title: data.kind === 'PS5' ? `بلايستيشن 5 ${data.model}` : `بلايستيشن 4 ${data.model}`,
+            ownerId: uid, ownerName: profile.name, area: data.area, district: data.district,
+            pricePerDay: data.pricePerDay, deposit: data.deposit, rating: 0, reviews: 0, delivery: true,
+            model: data.model, storage: data.storage, controllers: data.controllers, games: data.games, includes: data.includes,
+            photoKey: data.photoKey, photoData: data.photoData, status: 'open', createdAt: Date.now(),
+        }), 'الإعلان ماتنشرش. اتأكد من النت وجرب تاني.');
     };
-    const submitComplaint = (subject: string, detail: string) => {
-        if (!complaintsSaved.ready || !profile) return;
-        setComplaints([...complaints, { id: `u${Date.now()}`, from: profile.name, subject, detail, status: 'مفتوحة', date: 'النهارده' }]);
+    const confirmRequest = (r: { days: number; rent: number; deposit: number; fromMs: number; deliveryFee: number; promo: string; discount: number; payMethod: string }) => {
+        if (!requestTarget || !user || !profile || !requestTarget.deviceId || !requestTarget.ownerId) return;
+        run(fbCreateOrder({
+            deviceId: requestTarget.deviceId, listingNumber: requestTarget.number, title: requestTarget.title,
+            ownerId: requestTarget.ownerId, ownerName: requestTarget.owner,
+            renterId: uid, renterName: profile.name, renterPhone: profile.phone,
+            pricePerDay: requestTarget.pricePerDay, days: r.days, rent: r.rent, deposit: r.deposit,
+            fromMs: r.fromMs, deliveryFee: r.deliveryFee, promo: r.promo, discount: r.discount, payMethod: r.payMethod,
+            status: 'requested', createdMs: Date.now(), handoverCheck: null, returnCheck: null,
+        }), 'الطلب ماتبعتش. اتأكد من النت وجرب تاني.');
     };
-    const deleteUser = (id: string) => adminSaved.ready && setAdmin({ ...admin, deletedIds: [...admin.deletedIds, id] });
-    const addUser = (u: AdminUser) => adminSaved.ready && setAdmin({ ...admin, addedUsers: [...admin.addedUsers, u] });
-    const closeComplaint = (id: string) => adminSaved.ready && setAdmin({ ...admin, closedIds: [...admin.closedIds, id] });
+    const ownerAnswer = (o: OrderDoc, ok: boolean) => {
+        if (!profile) return;
+        run(fbUpdateOrder(o.id, ok ? { status: 'accepted', ownerPhone: profile.phone } : { status: 'declined' }), 'الرد ماتسجلش. جرب تاني.');
+    };
+    const courierTake = (o: OrderDoc) => profile && run(fbUpdateOrder(o.id, { status: 'taken', courierId: uid, courierName: profile.name }), 'ماتسجلش. جرب تاني.');
+    const courierPickedUp = (o: OrderDoc) => run(fbUpdateOrder(o.id, { status: 'pickedup' }), 'ماتسجلش. جرب تاني.');
+    const courierArrived = (o: OrderDoc) => run(fbUpdateOrder(o.id, { status: 'arrived' }), 'ماتسجلش. جرب تاني.');
+    const courierDeliver = (o: OrderDoc) => {
+        run(fbUpdateOrder(o.id, { status: 'delivered', deliveredAt: Date.now() }), 'ماتسجلش. جرب تاني.');
+        if (o.deviceId) run(fbUpdateDevice(o.deviceId, { status: 'rented' }), '');
+    };
+    const renterReturn = () => { if (rentalOrder) run(fbUpdateOrder(rentalOrder.id, { status: 'returning' }), 'ماتسجلش. جرب تاني.'); };
+    const courierReturnDone = (o: OrderDoc) => {
+        run(fbUpdateOrder(o.id, { status: 'returned' }), 'ماتسجلش. جرب تاني.');
+        if (o.deviceId) run(fbUpdateDevice(o.deviceId, { status: 'open' }), '');
+    };
+    const saveProfile = (p: UserProfile) => {
+        if (!user) return;
+        run(fbSaveProfile(uid, { ...p, email: user.email || '' }), 'البيانات ماتحفظتش. اتأكد من النت وجرب تاني.');
+        setEditProfile(false);
+    };
+    const submitComplaint = (subject: string, detailText: string) => {
+        if (!user || !profile) return;
+        run(fbAddComplaint({ uid, from: profile.name, subject, detail: detailText, status: 'مفتوحة', createdAt: Date.now() }), 'الشكوى ماتبعتتش. جرب تاني.');
+    };
     const openSupport = () => setChatWith({ name: SUPPORT_NAME, suggestions: SUPPORT_SUGGESTIONS });
-    const handover = () => {
-        if (!order || !rentalSaved.ready) return;
-        setRental({ title: order.title, owner: order.owner, ownerPhone: order.ownerPhone, pricePerDay: order.pricePerDay, days: order.days, startMs: Date.now(), returned: false });
-        if (requestsSaved.ready) setRequests(requestsRaw.filter(r => r.id !== order.requestId));
-        if (orderSaved.ready) setOrder(null);
-    };
+
+    const busyForTarget = requestTarget
+        ? busyDaysFor(consoles.find(c => c.id === requestTarget.deviceId) || ({ id: requestTarget.deviceId || '', number: requestTarget.number, demo: requestTarget.demo, ownerId: requestTarget.ownerId } as ConsoleListing), orders)
+        : new Set<number>();
+
+    if (user === undefined || (user && profileDoc === undefined) || devices === undefined || ordersAll === undefined) {
+        return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
+            <Header title="NEXUS" fact="نسخة تجريبية 1.1" intro="ثواني وبنجهز حسابك من السيرفر..." />
+        </div></FileCard>;
+    }
+    if (!user) return <AuthPage />;
+    if (!profile) {
+        return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
+            <Header title="NEXUS" fact="نسخة تجريبية 1.1" intro="آخر خطوة: عرفنا بنفسك. بياناتك بتتحفظ على السيرفر بأمان، وصورتك وصورة بطاقتك للإدارة بس." />
+            <Group label="بياناتك" heading="معلوماتك الأساسية">
+                <ProfileForm initial={null} submitLabel="احفظ وابدأ" onSave={saveProfile} />
+            </Group>
+        </div></FileCard>;
+    }
     return <FileCard lang="ar" dir="rtl">
         <div className="nexus-app">
-        {ready && !profile ? <>
-            <Header title="NEXUS" fact="نسخة تجريبية 1.0" intro="قبل ما تبدأ، عرفنا بنفسك: بياناتك بتفضل على جهازك بس في التجربة دي." />
-            <Group label="بياناتك" heading="معلوماتك الأساسية">
-                <ProfileForm initial={null} submitLabel="احفظ وابدأ" onSave={(p) => setProfile(p)} />
-            </Group>
-        </> : <>
         <div className="nexus-topbar">
             <button type="button" className="nexus-menu-btn" aria-label="افتح القائمة" onClick={() => setMenuOpen(true)}>⋮</button>
         </div>
         <div onPointerDown={lpStart} onPointerUp={lpCancel} onPointerMove={lpCancel} onPointerLeave={lpCancel} onPointerCancel={lpCancel}
             onContextMenu={e => { if ((e.target as HTMLElement).closest('.file-title')) e.preventDefault(); }}>
-            <Header title="NEXUS" fact="نسخة تجريبية 1.0" intro="وسيط بين اللي عنده بلايستيشن واللي عايز يلعب: اختار أقرب جهاز أو دراع أو لعبة، كلم صاحبها، وادفع كاش عند الاستلام." />
+            <Header title="NEXUS" fact="نسخة تجريبية 1.1" intro="وسيط بين اللي عنده بلايستيشن واللي عايز يلعب: اختار أقرب جهاز أو دراع أو لعبة، كلم صاحبها، وادفع كاش عند الاستلام." />
         </div>
-        <Callout title="دي نسخة تجريبية" tone="warning">كل الأجهزة والأسعار والتقييمات هنا بيانات وهمية للتوضيح، ومفيش حجز أو دفع حقيقي بيحصل من الصفحة دي.</Callout>
-        <Drawer open={menuOpen} profile={profile} myCount={myListings.length} onClose={() => setMenuOpen(false)} onGuide={() => setGuideOpen(true)} onSupport={openSupport} />
+        <Callout title="النسخة دي متصلة بسيرفر حقيقي" tone="warning">الإعلانات اللي عليها علامة «تجريبي» وهمية للتوضيح. باقي الإعلانات والطلبات والشات حقيقي وبيتحفظ على السيرفر، والدفع كاش عند الاستلام مع المندوب.</Callout>
+        <Drawer open={menuOpen} profile={profile} myCount={myListings.length} email={user.email || ''} onClose={() => setMenuOpen(false)} onGuide={() => setGuideOpen(true)} onSupport={openSupport} onSignOut={() => { fbSignOut().catch(() => {}); }} />
         <Routes>
             <Route path="/" element={<Home consoles={consoles} gear={SEED_GEAR} onOpenConsole={setDetail} onRequestGear={requestGear} onChat={(n) => setChatWith({ name: n })} />} />
             <Route path="/map" element={<MapPage consoles={consoles} onRequest={requestConsole} />} />
-            <Route path="/add" element={<AddPage onAdd={addListing} blocked={!!rental && !rental.returned} />} />
-            <Route path="/admin" element={!profile
-                ? <Group label="حسابك" heading="سجل بياناتك الأول"><Callout title="لسه مفيش بيانات" tone="note">ارجع للصفحة الرئيسية واملأ بياناتك الأول.</Callout></Group>
-                : adminRole === 'courier'
-                    ? <CourierPanel order={order} profileName={profile.name} handoverCheck={handoverCheck} onAcceptOrder={() => { if (orderSaved.ready && order) setOrder({ ...order, courierAccepted: true }); }} onConfirmDelivery={handover} onExit={() => { setAdminRole(null); window.location.hash = '/'; }} />
-                    : adminRole === 'admin'
-                        ? <>
-                            <AdminPage profile={profile} myListings={myListings} requests={requests} order={order} complaints={complaints} admin={admin} onDeleteUser={deleteUser} onAddUser={addUser} onCloseComplaint={closeComplaint} />
-                            <div className="nexus-card-actions"><FileButton variant="ghost" compact onClick={() => { setAdminRole(null); window.location.hash = '/'; }}>خروج من لوحة الإدارة</FileButton></div>
-                        </>
-                        : <Group label="الصفحة دي مش موجودة" heading="اتوجهت غلط"><Callout title="مفيش حاجة هنا" tone="note">الصفحة دي مش متاحة. ارجع للإعلانات.</Callout><Link className="file-button is-compact" data-variant="secondary" to="/">ارجع للإعلانات</Link></Group>} />
-            <Route path="/detail" element={<ConsoleDetailPage listing={detail} busy={detail ? busyDaysFor(detail.number, bookings) : new Set<number>()} onRequest={() => detail && requestConsole(detail)} onChat={(n) => setChatWith({ name: n })} />} />
-            <Route path="/order" element={<OrderPage order={order} handoverCheck={handoverCheck} onHandoverCheck={setHandoverCheck} onChat={(n, s) => setChatWith({ name: n, suggestions: s })} />} />
-            <Route path="/request" element={<RequestPage target={requestTarget} hasOpenRequest={requests.length > 0} busy={requestTarget ? busyDaysFor(requestTarget.number, bookings) : new Set<number>()} onConfirm={(r) => { if (requestsSaved.ready && orderSaved.ready && requestTarget) { const reqId = `r${Date.now()}`; setRequests([...requestsRaw, { id: reqId, listingNumber: requestTarget.number, title: requestTarget.title, owner: requestTarget.owner, days: r.days, rent: r.rent, deposit: r.deposit, fromMs: r.fromMs, deliveryFee: r.deliveryFee, promo: r.promo, discount: r.discount, payMethod: r.payMethod }]); setOrder({ id: `o${Date.now()}`, requestId: reqId, title: requestTarget.title, owner: requestTarget.owner, ownerPhone: DEMO_OWNER_PHONE, pricePerDay: requestTarget.pricePerDay, days: r.days, rent: r.rent, deposit: r.deposit, createdMs: Date.now(), fromMs: r.fromMs, deliveryFee: r.deliveryFee, promo: r.promo, discount: r.discount, payMethod: r.payMethod }); if (bookingsSaved.ready) setBookings([...bookings, { listingNumber: requestTarget.number, fromMs: r.fromMs, days: r.days }]); } }} />} />
-            <Route path="/profile" element={profile ? <ProfilePage profile={profile} requests={requests} myListings={myListings} rental={rental} returnCheck={returnCheck} onReturnCheck={setReturnCheck} onEditProfile={() => setEditProfile(true)} onReturn={() => rentalSaved.ready && rental && setRental({ ...rental, returned: true })} onClearRental={() => rentalSaved.ready && setRental(null)} onCancelRequest={(id) => { if (requestsSaved.ready) setRequests(requestsRaw.filter(r => r.id !== id)); if (orderSaved.ready && order && order.requestId === id) setOrder(null); }} onDeleteListing={(id) => listingsSaved.ready && setMyListings(myListingsRaw.filter(l => l.id !== id))} onChat={(n, s) => setChatWith({ name: n, suggestions: s })} onTrack={setTracking} onLenderAnswer={lenderAnswer} onPickedUp={pickedUp} onSupport={openSupport} onComplain={() => setComplaintOpen(true)} /> : <Group label="حسابك" heading="سجل بياناتك الأول"><Callout title="لسه مفيش بيانات" tone="note">ارجع للصفحة الرئيسية واملأ بياناتك الأول.</Callout></Group>} />
+            <Route path="/add" element={<AddPage onAdd={addListing} blocked={!!rentalOrder} profile={profile} />} />
+            <Route path="/admin" element={adminRole === 'courier'
+                ? <CourierPanel feed={courierFeed} myUid={uid} myName={profile.name}
+                    onTake={courierTake} onPickedUp={courierPickedUp} onArrived={courierArrived} onDeliver={courierDeliver} onReturnDone={courierReturnDone}
+                    onChat={(n, s, ch) => handleChat(n, s, ch)} onExit={() => { setAdminRole(null); window.location.hash = '/'; }} />
+                : adminRole === 'admin'
+                    ? <>
+                        <AdminPage users={adminUsers || []} complaints={adminComplaints || []} orders={orders} devices={devList}
+                            onCloseComplaint={(id) => run(fbCloseComplaint(id), 'ماتقفلتش. جرب تاني.')}
+                            onDeleteUser={(id) => run(fbDeleteUser(id), 'ماتمسحش. جرب تاني.')} />
+                        <div className="nexus-card-actions"><FileButton variant="ghost" compact onClick={() => { setAdminRole(null); window.location.hash = '/'; }}>خروج من لوحة الإدارة</FileButton></div>
+                    </>
+                    : <Group label="الصفحة دي مش موجودة" heading="اتوجهت غلط"><Callout title="مفيش حاجة هنا" tone="note">الصفحة دي مش متاحة. ارجع للإعلانات.</Callout><Link className="file-button is-compact" data-variant="secondary" to="/">ارجع للإعلانات</Link></Group>} />
+            <Route path="/detail" element={<ConsoleDetailPage listing={detail} busy={busyDaysFor(detail, orders)} onRequest={() => detail && requestConsole(detail)} onChat={() => detail && (detail.demo || !detail.ownerId ? setChatWith({ name: detail.owner }) : openDmFor(detail))} />} />
+            <Route path="/order" element={<OrderPage order={currentOrder} onHandoverCheck={(v) => currentOrder && run(fbUpdateOrder(currentOrder.id, { handoverCheck: v }), 'ماتحفظتش. جرب تاني.')} onChat={handleChat} />} />
+            <Route path="/request" element={<RequestPage target={requestTarget} hasOpenRequest={myOrders.some(o => o.status === 'requested')} busy={busyForTarget} onConfirm={confirmRequest} />} />
+            <Route path="/profile" element={<ProfilePage profile={profile} myUid={uid} email={user.email || ''} myOrders={myOrders} incoming={incoming} myListings={myListings} orders={orders} rentalOrder={rentalOrder} chats={chats || []}
+                onEditProfile={() => setEditProfile(true)}
+                onReturn={renterReturn}
+                onReturnCheck={(v) => rentalOrder && run(fbUpdateOrder(rentalOrder.id, { returnCheck: v }), 'ماتحفظتش. جرب تاني.')}
+                onCancelRequest={(id) => run(fbDeleteOrder(id), 'الطلب ماتلغاش. جرب تاني.')}
+                onDeleteListing={(id) => run(fbDeleteDevice(id), 'الإعلان ماتمسحش. جرب تاني.')}
+                onChat={handleChat} onTrack={setTracking} onOwnerAnswer={ownerAnswer}
+                onOpenChat={(c) => setChatWith({ name: chatNameOf(c), channelId: c.id })}
+                onSupport={openSupport} onComplain={() => setComplaintOpen(true)}
+                onSignOut={() => { fbSignOut().catch(() => {}); }} />} />
         </Routes>
         <BottomNav onGuide={() => setGuideOpen(true)} />
         {guideOpen && <GuideDialog onClose={() => setGuideOpen(false)} />}
-        {complaintOpen && profile && <ComplaintDialog from={profile.name} onSubmit={submitComplaint} onClose={() => setComplaintOpen(false)} />}
+        {complaintOpen && <ComplaintDialog from={profile.name} onSubmit={submitComplaint} onClose={() => setComplaintOpen(false)} />}
         {gateStep !== 'none' && <AdminGateDialog step={gateStep} onRole={pickRole} onClose={() => setGateStep('none')} />}
-        {chatWith && <ChatDialog name={chatWith.name} suggestions={chatWith.suggestions} onClose={() => setChatWith(null)} />}
+        {chatWith && <ChatDialog name={chatWith.name} suggestions={chatWith.suggestions} channelId={chatWith.channelId} meUid={uid} meName={profile.name} onClose={() => setChatWith(null)} />}
         {tracking && <TrackingDialog title={tracking.title} onClose={() => setTracking(null)} />}
-        {editProfile && profile && <div className="nexus-overlay" role="dialog" aria-modal="true" aria-label="تعديل بياناتك">
+        {demoNote && <div className="nexus-overlay" role="dialog" aria-modal="true" aria-label="إعلان توضيحي">
+            <div className="nexus-sheet">
+                <div className="nexus-sheet-close"><CloseButton label="إغلاق" onClick={() => setDemoNote(false)} /></div>
+                <h2 className="nexus-sheet-title">إعلان توضيحي بس</h2>
+                <Paragraph>الإعلان ده وهمي للتوضيح، صاحبه مش موجود فعلًا فمفيش طلب حقيقي هيتبعت. جرب تطلب جهاز حقيقي من إعلانات المستخدمين، أو انزل جهازك من "أضف إعلانك".</Paragraph>
+                <FileButton variant="primary" pill onClick={() => setDemoNote(false)}>تمام</FileButton>
+            </div>
+        </div>}
+        {editProfile && <div className="nexus-overlay" role="dialog" aria-modal="true" aria-label="تعديل بياناتك">
             <div className="nexus-sheet">
                 <div className="nexus-sheet-close"><CloseButton label="إغلاق" onClick={() => setEditProfile(false)} /></div>
                 <h2 className="nexus-sheet-title">عدل بياناتك</h2>
-                <ProfileForm initial={profile} submitLabel="احفظ التعديل" onSave={(p) => { setProfile(p); setEditProfile(false); }} />
+                <ProfileForm initial={profile} submitLabel="احفظ التعديل" onSave={saveProfile} />
             </div>
         </div>}
-        {(() => { const msgs = [...new Set([listingsSaved.message, requestsSaved.message, profileSaved.message, orderSaved.message, rentalSaved.message].filter(Boolean))]; return ready && msgs.length ? <Caption>{msgs.join(' ')}</Caption> : null; })()}
+        {errNote && <Callout title="حصلت مشكلة" tone="danger">{errNote}</Callout>}
         <Caption>صور الأجهزة: بلايستيشن 5 بواسطة Soberian وبلايستيشن 4 بواسطة Evan-Amos والدراع بواسطة Viper polo، عبر ويكيميديا كومنز. أغلفة الألعاب رسوم توضيحية.</Caption>
-        <Closing>نسخة تجريبية 1.0. اتعملت 27 نوفمبر 2026. مفيش طلبات حقيقية اتبعتت.</Closing>
-        </>}
+        <Closing>نسخة تجريبية 1.1 متصلة بسيرفر Firebase حقيقي. اتعملت 27 نوفمبر 2026.</Closing>
         </div>
     </FileCard>;
 }
