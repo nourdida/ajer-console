@@ -5,7 +5,7 @@ import {
     fbSignUp, fbSignIn, fbSignOut, fbSaveProfile, fbAddDevice, fbUpdateDevice, fbDeleteDevice, useExactLocations,
     fbCreateOrder, fbUpdateOrder, fbDeleteOrder, fbOpenChat, fbSendMessage, fbAddComplaint, fbCloseComplaint, fbDeleteUser,
     authErrorAr, dmChannelId, orderChannelId, ORDER_BUSY,
-    type DeviceDoc, type OrderDoc, type OrderStatus, type ChatDoc, type ProfileDoc, type AdminUserDoc, type ComplaintDoc,
+    type DeviceDoc, type OrderDoc, type ReviewEntry, type OrderStatus, type ChatDoc, type ProfileDoc, type AdminUserDoc, type ComplaintDoc,
 } from './fb';
 import themeConfig from '../theme.js';
 import 'leaflet/dist/leaflet.css';
@@ -29,6 +29,8 @@ type ConsoleListing = {
     model: string; storage: string; controllers: number; games: string[]; includes: string;
     photoKey?: string; mine?: boolean; ownerId?: string; photoData?: string; createdAt?: number;
     lat?: number; lng?: number;
+    reviewList?: ReviewEntry[];
+    trackNote?: string;
     status?: 'open' | 'courier' | 'rented'; requestAt?: number; courierMs?: number; dueMs?: number;
 };
 
@@ -201,26 +203,26 @@ function Stars({ rating, reviews }: { rating: number; reviews: number }) {
 }
 
 function ConsoleCard({ listing, onOpen, onDelete, onTrack }: { listing: ConsoleListing; onOpen?: () => void; onDelete?: (id: string) => void; onTrack?: () => void }) {
-    const inner = <>
-        <img className="nexus-thumb" src={listing.photoData || PHOTOS[listing.photoKey || listing.kind.toLowerCase()]} alt={KIND_ALT[listing.kind] || 'جهاز ألعاب مع ذراع تحكم'} />
-        <div className="nexus-card-body">
-            <div className="nexus-card-title"><span className="nexus-num">{listing.number}</span> {listing.title}</div>
-            <div className="nexus-muted">{listing.owner} · {areaName(listing.area)}، {listing.district}</div>
-            <div className="nexus-muted"><Stars rating={listing.rating} reviews={listing.reviews} />' · توصيل بالمندوب'</div>
-            {listing.games.length > 0 && <div className="nexus-chips">{listing.games.map((g, i) => <span key={g} className="nexus-chip" style={gameChipStyle(i)}>{g}</span>)}</div>}
-            <div className="nexus-card-foot">
-                <span className="nexus-price"><bdi>{listing.pricePerDay}</bdi> ج.م في اليوم</span>
-                <span className="nexus-muted">تأمين <bdi>{listing.deposit}</bdi> ج.م بيرجع</span>
+    const inner = <div style={{ display: 'flex', gap: 12, padding: 12 }}>
+        <div className="nd-thumb" style={{ width: 72, height: 72, borderRadius: 16 }}><img src={listing.photoData || PHOTOS[listing.photoKey || listing.kind.toLowerCase()]} alt={KIND_ALT[listing.kind] || 'جهاز ألعاب مع ذراع تحكم'} style={{ maxHeight: 56 }} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+            <b style={{ fontSize: 14 }}>{listing.title}</b>
+            <div className="nd-note" style={{ marginTop: 2 }}>{listing.owner} · {areaName(listing.area)}، {listing.district}</div>
+            <div style={{ marginTop: 4 }}><Stars rating={listing.rating} reviews={listing.reviews} /></div>
+            <div className="nd-row" style={{ marginTop: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--nd-acctext)' }}><bdi>{listing.pricePerDay}</bdi> ج.م / اليوم</span>
+                <span className="nd-note" style={{ fontSize: 11.5 }}>تأمين <bdi>{listing.deposit}</bdi> ج.م بيرجع</span>
             </div>
-            {listing.mine && listing.status === 'rented' && <div className="nexus-badge nexus-badge-red">قيد الإيجار</div>}
-            {(onDelete || onTrack) && <div className="nexus-card-actions">
-                {onTrack && <FileButton variant="secondary" compact pill onClick={onTrack}>تتبع مكانه</FileButton>}
-                {onDelete && <FileButton variant="ghost" compact onClick={() => onDelete(listing.id)}>احذف الإعلان</FileButton>}
+            {listing.games.length > 0 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>{listing.games.map(g => <span key={g} className="nd-chip2">{g}</span>)}</div>}
+            {listing.mine && listing.status === 'rented' && <div style={{ marginTop: 6 }}><span className="nd-chip2" style={{ color: '#ff6b6b' }}>قيد الإيجار</span></div>}
+            {(onDelete || onTrack) && <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                {onTrack && <button type="button" className="nd-btn2" style={{ flex: 1, padding: 9 }} onClick={(e) => { e.preventDefault(); onTrack(); }}>تتبع مكانه</button>}
+                {onDelete && <button type="button" className="nd-btn2" style={{ flex: 1, padding: 9, color: '#ff6b6b' }} onClick={(e) => { e.preventDefault(); onDelete(listing.id); }}>احذف الإعلان</button>}
             </div>}
         </div>
-    </>;
-    if (onOpen) return <Link className="nexus-card nexus-card-link" to="/detail" onClick={onOpen}>{inner}</Link>;
-    return <div className="nexus-card">{inner}</div>;
+    </div>;
+    if (onOpen) return <Link to="/detail" onClick={onOpen} style={{ display: 'block', textDecoration: 'none', color: 'inherit' }}>{inner}</Link>;
+    return inner;
 }
 
 function ChatDialog({ name, suggestions, onClose, channelId, meUid, meName }: { name: string; suggestions?: string[]; onClose: () => void; channelId?: string; meUid?: string; meName?: string }) {
@@ -228,6 +230,7 @@ function ChatDialog({ name, suggestions, onClose, channelId, meUid, meName }: { 
     const [msgs, setMsgs] = useState<ChatMsg[]>([{ me: false, text: suggestions ? 'أهلًا! اسأل براحتك 🎮' : 'أهلًا! الجهاز متاح، اسأل براحتك 🎮' }]);
     const [text, setText] = useState('');
     const [sendErr, setSendErr] = useState('');
+    const listRef = useRef<HTMLDivElement | null>(null);
     const real = !!channelId && !!meUid;
     const sendText = (t: string) => {
         const v = t.trim();
@@ -243,25 +246,27 @@ function ChatDialog({ name, suggestions, onClose, channelId, meUid, meName }: { 
     const bubbles: ChatMsg[] = real
         ? (live || []).map((m) => ({ me: m.from === meUid, text: m.text }))
         : msgs;
-    return <div className="nexus-overlay" role="dialog" aria-modal="true" aria-label={`محادثة مع ${name}`}>
-        <div className="nexus-sheet">
-            <div className="nexus-sheet-close"><CloseButton label="إغلاق" onClick={onClose} /></div>
-            <h2 className="nexus-sheet-title">{name}</h2>
-            <div className="nexus-chat">
-                {real && live === undefined && <Caption>بنحمّل الرسايل من السيرفر...</Caption>}
-                {real && live !== undefined && live.length === 0 && <Caption>مفيش رسايل لسه. اكتب أول رسالة.</Caption>}
-                {bubbles.map((m, i) => <div key={i} className={m.me ? 'nexus-bubble nexus-bubble-me' : 'nexus-bubble'}>{m.text}</div>)}
-            </div>
-            {suggestions && suggestions.length > 0 && <div className="nexus-chips nexus-suggest">
-                {suggestions.map(s => <button key={s} type="button" className="nexus-chip nexus-chip-btn" onClick={() => sendText(s)}>{s}</button>)}
-            </div>}
-            <div className="nexus-chat-row">
-                <input className="nexus-chat-input" value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') send(); }} placeholder="اكتب رسالتك..." aria-label="اكتب رسالتك" />
-                <FileButton variant="primary" compact pill onClick={send}>ابعت</FileButton>
-            </div>
-            {sendErr && <Caption>{sendErr}</Caption>}
-            {real && <Caption>شات مباشر على السيرفر: الطرف التاني بيشوف رسالتك في نفس اللحظة.</Caption>}
+    useEffect(() => { const el = listRef.current; if (el) el.scrollTop = el.scrollHeight; }, [bubbles.length]);
+    return <div className="nd-page" role="dialog" aria-modal="true" aria-label={`محادثة مع ${name}`} style={{ position: 'fixed', inset: 0, zIndex: 60, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div className="nd-topbar">
+            <button type="button" className="nd-back" onClick={onClose} aria-label="رجوع"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
+            <div className="nd-av" style={{ width: 38, height: 38, fontSize: 15 }}>{name.trim().charAt(0)}</div>
+            <div><b style={{ fontSize: 15 }}>{name}</b><div className="nd-note">{real ? 'شات مباشر على السيرفر' : 'محادثة'}</div></div>
+            <div style={{ flex: 1 }} />
         </div>
+        <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: '18px 22px 190px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {real && live === undefined && <div className="nd-note">بنحمّل الرسايل من السيرفر...</div>}
+            {real && live !== undefined && live.length === 0 && <div className="nd-note">مفيش رسايل لسه. اكتب أول رسالة.</div>}
+            {bubbles.map((m, i) => <div key={i} className={`nd-msg ${m.me ? 'me' : 'in'}`}>{m.text}</div>)}
+        </div>
+        {suggestions && suggestions.length > 0 && <div style={{ position: 'fixed', bottom: 86, left: 22, right: 22, display: 'flex', gap: 8, overflowX: 'auto', zIndex: 61, scrollbarWidth: 'none' }}>
+            {suggestions.map(s => <button key={s} type="button" className="nd-chip2" style={{ cursor: 'pointer', border: 0, fontFamily: 'inherit', flex: 'none' }} onClick={() => sendText(s)}>{s}</button>)}
+        </div>}
+        <div className="nd-chatbar">
+            <button type="button" className="nd-send" onClick={send} aria-label="ابعت"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg></button>
+            <input className="nd-in" value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') send(); }} placeholder="اكتب رسالة..." aria-label="اكتب رسالتك" />
+        </div>
+        {sendErr && <div className="nd-note" style={{ position: 'fixed', bottom: 140, left: 22, right: 22, zIndex: 61 }}>{sendErr}</div>}
     </div>;
 }
 
@@ -278,7 +283,7 @@ function TrackingMap({ lat, lng, title, exact }: { lat: number; lng: number; tit
         if (!exact) {
             L.circle([lat, lng], { radius: 380, color: '#C724B1', weight: 1, dashArray: '6 6', fillColor: '#C724B1', fillOpacity: 0.06 }).addTo(map);
         }
-        const icon = L.divIcon({ className: 'nexus-pin is-selected', html: `<span>${exact ? 'دقيق' : 'هنا'}</span>`, iconSize: [34, 34], iconAnchor: [17, 17] });
+        const icon = L.divIcon({ className: 'nexus-pin is-selected', html: `<span>جهازك هنا</span>`, iconSize: [34, 34], iconAnchor: [17, 17] });
         L.marker([lat, lng], { icon }).addTo(map);
         mapRef.current = map;
         const t1 = setTimeout(() => map.invalidateSize(), 250);
@@ -286,22 +291,31 @@ function TrackingMap({ lat, lng, title, exact }: { lat: number; lng: number; tit
         return () => { clearTimeout(t1); clearTimeout(t2); map.remove(); mapRef.current = null; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-    return <div ref={divRef} className="nexus-map-real nexus-map-track" role="application" aria-label={`خريطة حقيقية بمكان ${title}`} />;
+    return <div ref={divRef} className="nexus-map-real nd-mapreal" style={{ width: '100%', height: '100%' }} role="application" aria-label={`خريطة حقيقية بمكان ${title}`} />;
 }
 
-function TrackingDialog({ title, lat, lng, exact, place, onClose }: { title: string; lat: number; lng: number; exact: boolean; place: string; onClose: () => void }) {
-    return <div className="nexus-overlay" role="dialog" aria-modal="true" aria-label={`تتبع مكان ${title}`}>
-        <div className="nexus-sheet">
-            <div className="nexus-sheet-close"><CloseButton label="إغلاق" onClick={onClose} /></div>
-            <h2 className="nexus-sheet-title">مكان جهازك دلوقتي</h2>
-            <TrackingMap lat={lat} lng={lng} title={title} exact={exact} />
-            <Facts items={[
-                { label: 'الخريطة', value: exact ? 'حقيقية، والمكان دقيق من المجموعة الخاصة' : 'حقيقية، والمكان مموّه (~٣٥٠م)' },
-                { label: 'آخر ظهور', value: 'من دقيقتين' },
-                { label: 'المكان', value: place },
-                { label: 'طريقة التتبع', value: 'GPS أو AirTag جوه الجهاز' },
-            ]} />
-            <Callout title="تتبع بموافقة المستأجر" tone="note">المستأجر بيعرف قبل ما يأكد الطلب إن الجهاز فيه جهاز تتبع ضد السرقة وبيوافق عليه، والتتبع بيشتغل بس طول مدة الإيجار. الخريطة حقيقية وبتعرض مكان الجهاز المحفوظ على السيرفر، لكن قراءات التتبع الحية (زي آخر ظهور) لسه توضيحية لحد ما أجهزة التتبع تشتغل فعليًا.</Callout>
+function TrackingDialog({ listing, lat, lng, exact, onClose }: { listing: ConsoleListing; lat: number; lng: number; exact: boolean; onClose: () => void }) {
+    const photo = listing.photoData || PHOTOS[listing.photoKey || listing.kind.toLowerCase()];
+    const place = [listing.district, areaName(listing.area)].filter(Boolean).join('، ');
+    return <div className="nd-page" role="dialog" aria-modal="true" aria-label={`تتبع مكان ${listing.title}`} style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className="nd-topbar">
+            <button type="button" className="nd-back" onClick={onClose} aria-label="رجوع"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
+            <b>مكان جهازك دلوقتي</b>
+            <div style={{ flex: 1 }} />
+        </div>
+        <div style={{ flex: 1, position: 'relative', margin: '0 -22px' }}>
+            <TrackingMap lat={lat} lng={lng} title={listing.title} exact={exact} />
+        </div>
+        <div className="nd-mapcard" style={{ position: 'absolute', bottom: 18, left: 22, right: 22, zIndex: 61, transform: 'none', width: 'auto' }}>
+            <div className="nd-row" style={{ justifyContent: 'flex-start' }}>
+                <div className="nd-thumb"><img src={photo} alt={listing.title} /></div>
+                <div style={{ flex: 1 }}><b style={{ fontSize: 14.5 }}>{listing.title}</b><div className="nd-note">{listing.trackNote || `مع ${listing.owner}`}{place ? ` · ${place}` : ''}</div></div>
+                <span className="nd-chip2 on">متعقب</span>
+            </div>
+            <div className="nd-note" style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', marginTop: 1 }}><path d="M12 21s7-6.1 7-11a7 7 0 1 0-14 0c0 4.9 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/></svg>
+                {exact ? 'المكان دقيق ومتتبع مباشرة بالـ AirTag طول مدة الإيجار، وبيوقف أول ما الجهاز يرجع.' : 'الموقع تقريبي لحد ما المندوب يسلّم الجهاز، وبعدها التتبع مباشر بالـ AirTag'}
+            </div>
         </div>
     </div>;
 }
@@ -310,57 +324,77 @@ function Avatar({ char, size }: { char: string; size?: number }) {
     return <span className="nexus-avatar" style={size ? { width: size, height: size, fontSize: size * 0.52 } : undefined} aria-hidden="true">{char}</span>;
 }
 
-function Home({ consoles, onOpenConsole }: { consoles: ConsoleListing[]; onOpenConsole: (l: ConsoleListing) => void }) {
-    const [filter, setFilter] = useState<{ cat: 'console' | 'controller' | 'game'; kind?: string; area?: 'زايد' | 'أكتوبر' } | null>(null);
-    const [step, setStep] = useState<0 | 1 | 2 | null>(null);
-    const [pickKind, setPickKind] = useState<string>('PS5');
-    const shownConsoles = consoles.filter(l => !filter || filter.cat !== 'console' || ((!filter.kind || l.kind === filter.kind) && (!filter.area || l.area === filter.area)));
-    const filterLabel = !filter ? '' : `${filter.kind} · ${areaName(filter.area || 'زايد')}`;
-    const heading = filter ? `${shownConsoles.length} نتيجة` : consoles.length === 0 ? 'لسه مفيش إعلانات' : `${consoles.length} إعلان قريب منك`;
-    const closeSheet = () => setStep(null);
-    return <>
-        <Group label="الإعلانات القريبة منك" heading={heading}>
-            <div className="nexus-filter-row">
-                <FileButton variant="secondary" compact pill onClick={() => setStep(0)}>فلتر</FileButton>
-                {filter && <button type="button" className="nexus-chip nexus-chip-btn" onClick={() => setFilter(null)}>× {filterLabel}</button>}
-            </div>
-            {shownConsoles.length === 0
-                ? (filter
-                    ? <Callout title="مفيش أجهزة بالفلتر ده" tone="note">جرّب فلتر تاني، أو أضف جهازك أنت.</Callout>
-                    : <Callout title="لسه مفيش أجهزة منشورة" tone="note">كون أول واحد ينزل جهازه: دوس "أضف إعلانك" تحت.</Callout>)
-                : shownConsoles.map(l => <ConsoleCard key={l.id} listing={l} onOpen={() => onOpenConsole(l)} />)}
-            <Caption>كل الإعلانات هنا حقيقية من مستخدمين زيك، منشورة على السيرفر.</Caption>
-        </Group>
-        {step !== null && <div className="nexus-overlay" role="dialog" aria-modal="true" aria-label="فلتر الإعلانات" onClick={closeSheet}>
-            <div className="nexus-sheet" onClick={e => e.stopPropagation()}>
-                <div className="nexus-sheet-close"><CloseButton label="إغلاق" onClick={closeSheet} /></div>
-                <h2 className="nexus-sheet-title">فلتر الإعلانات</h2>
-                {step === 0 && <div className="nexus-sheet-step" key="s0">
-                    <Paragraph>بتدور على إيه؟</Paragraph>
-                    <div className="nexus-circles">
-                        <button type="button" className="nexus-circle" onClick={() => setStep(1)}>أجهزة</button>
-                    </div>
-                </div>}
-                {step === 1 && <div className="nexus-sheet-step" key="s1">
-                    <Paragraph>أنهم جهاز؟</Paragraph>
-                    <div className="nexus-circles">
-                        <button type="button" className="nexus-circle" onClick={() => { setPickKind('PS5'); setStep(2); }}>PS5</button>
-                        <button type="button" className="nexus-circle" onClick={() => { setPickKind('PS4'); setStep(2); }}>PS4</button>
-                        <button type="button" className="nexus-circle" onClick={() => { setPickKind('Xbox'); setStep(2); }}>Xbox</button>
-                    </div>
-                    <FileButton variant="ghost" compact onClick={() => setStep(0)}>ارجع</FileButton>
-                </div>}
-                {step === 2 && <div className="nexus-sheet-step" key="s2">
-                    <Paragraph>في أنهي منطقة؟</Paragraph>
-                    <div className="nexus-circles">
-                        <button type="button" className="nexus-circle" onClick={() => { setFilter({ cat: 'console', kind: pickKind, area: 'زايد' }); closeSheet(); }}>الشيخ زايد</button>
-                        <button type="button" className="nexus-circle" onClick={() => { setFilter({ cat: 'console', kind: pickKind, area: 'أكتوبر' }); closeSheet(); }}>6 أكتوبر</button>
-                    </div>
-                    <FileButton variant="ghost" compact onClick={() => setStep(1)}>ارجع</FileButton>
-                </div>}
+function ThemeBtn() {
+    const [light, setLight] = useState(() => typeof document !== 'undefined' && document.documentElement.dataset.theme === 'light');
+    const toggle = () => { setLight(l => !l); window.dispatchEvent(new CustomEvent('nexus-toggle-theme')); };
+    const sun = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>;
+    const moon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>;
+    return <button type="button" className="nd-theme-btn" onClick={toggle} aria-label={light ? 'بدّل للوضع الداكن' : 'بدّل للوضع الفاتح'}>{light ? moon : sun}</button>;
+}
+
+function Home({ consoles, profile, onOpenConsole }: { consoles: ConsoleListing[]; profile: UserProfile | null; onOpenConsole: (l: ConsoleListing) => void }) {
+    const [filter, setFilter] = useState<{ kind?: string; area?: 'زايد' | 'أكتوبر' } | null>(null);
+    const [sheetOpen, setSheetOpen] = useState(false);
+    const shown = consoles.filter(l => !filter || ((!filter.kind || l.kind === filter.kind) && (!filter.area || l.area === filter.area)));
+    const hour = new Date().getHours();
+    const greet = hour >= 5 && hour < 12 ? 'صباح الخير' : hour < 18 ? 'مساء الخير' : 'مساء الخير';
+    const first = (profile?.name || '').trim().split(' ')[0] || 'بيك';
+    const hero = shown[0] || null;
+    const rest = shown.slice(1);
+    const imgOf = (l: ConsoleListing) => l.photoData || PHOTOS[l.photoKey || l.kind.toLowerCase()];
+    const rows: ConsoleListing[][] = [];
+    for (let i = 0; i < rest.length; i += 2) rows.push(rest.slice(i, i + 2));
+    return <div className="nd-page">
+        <div className="nd-glow" style={{ width: 280, height: 280, background: 'var(--nd-g1)', top: -90, right: -70 }} />
+        <div className="nd-header">
+            <div><div className="nd-hi">{greet}</div><div className="nd-name">{first}</div></div>
+            <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <ThemeBtn />
+                <NavLink to="/profile" className="nd-avatar" aria-label="حسابك">{profile?.photo ? <img src={profile.photo} alt="صورتك" /> : (profile?.avatar || first[0] || 'ن')}</NavLink>
+            </span>
+        </div>
+        {hero && <button type="button" className="nd-hero" onClick={() => onOpenConsole(hero)}>
+            <span className="nd-chip">الأقرب ليك</span>
+            <h1>{hero.kind} {hero.model}</h1>
+            <div className="nd-price">{hero.pricePerDay} ج.م / اليوم</div>
+            <span className="nd-cta">احجز دلوقتي</span>
+            <span className={imgOf(hero).endsWith('.png') ? 'nd-heroimg' : 'nd-heroimg panel'}><img src={imgOf(hero)} alt={KIND_ALT[hero.kind] || 'جهاز ألعاب'} /></span>
+        </button>}
+        <div className="nd-sect">
+            <b>{filter ? `${shown.length} نتيجة` : 'قريب منك'}</b>
+            <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                {filter && <button type="button" className="nd-chip2 on" onClick={() => setFilter(null)}>× {filter.kind || 'الكل'} · {areaName(filter.area || 'زايد')}</button>}
+                <button type="button" className="nd-linklike" style={{ color: 'var(--nd-mut)', fontWeight: 600 }} onClick={() => setSheetOpen(true)}>{filter ? 'غيّر الفلتر' : 'شوف الكل'}</button>
+            </span>
+        </div>
+        {!hero && <div className="nd-pad"><div className="nd-card nd-note" style={{ fontSize: 13 }}>
+            {filter ? 'مفيش أجهزة بالفلتر ده. جرّب فلتر تاني، أو أضف جهازك أنت.' : 'لسه مفيش إعلانات منشورة. كون أول واحد ينزل جهازه: دوس + تحت.'}
+        </div></div>}
+        {rows.map((row, i) => <div className="nd-tiles" key={i} style={{ marginTop: i === 0 ? 0 : 12 }}>
+            {row.map(l => <button type="button" className="nd-tile" key={l.id} onClick={() => onOpenConsole(l)}>
+                <div className="nd-imgw"><img src={imgOf(l)} alt={KIND_ALT[l.kind] || 'جهاز ألعاب'} /></div>
+                <b>{l.kind} {l.model}</b>
+                <span>{[l.district, areaName(l.area)].filter(Boolean).join('، ')}</span>
+                <div className="nd-p">{l.pricePerDay} ج.م / اليوم</div>
+            </button>)}
+            {row.length === 1 && <div style={{ flex: 1 }} />}
+        </div>)}
+        <div className="nd-pad" style={{ paddingBottom: 120 }}>
+            <div className="nd-note" style={{ textAlign: 'center', marginTop: 14 }}>كل الإعلانات هنا حقيقية من مستخدمين زيك، متصلة بالسيرفر لحظة بلحظة، والدفع كاش عند الاستلام مع المندوب.</div>
+        </div>
+        {sheetOpen && <div className="nd-overlay" role="dialog" aria-modal="true" aria-label="فلتر الإعلانات" onClick={() => setSheetOpen(false)}>
+            <div className="nd-card" style={{ margin: '120px 22px 0', display: 'flex', flexDirection: 'column', gap: 12 }} onClick={e => e.stopPropagation()}>
+                <b style={{ fontSize: 15 }}>فلتر الإعلانات</b>
+                <div className="nd-seg">
+                    {['الكل', 'PS5', 'PS4', 'Xbox'].map(k => <button key={k} type="button" className={(k === 'الكل' ? !filter?.kind : filter?.kind === k) ? 'on' : ''} onClick={() => setFilter(f => k === 'الكل' ? (f?.area ? { area: f.area } : null) : { kind: k, area: f?.area })}>{k}</button>)}
+                </div>
+                <div className="nd-seg">
+                    {(['الكل', 'زايد', 'أكتوبر'] as const).map(a => <button key={a} type="button" className={(a === 'الكل' ? !filter?.area : filter?.area === a) ? 'on' : ''} onClick={() => setFilter(f => a === 'الكل' ? (f?.kind ? { kind: f.kind } : null) : { kind: f?.kind, area: a })}>{a === 'الكل' ? 'الكل' : areaName(a)}</button>)}
+                </div>
+                <button type="button" className="nd-btn" onClick={() => setSheetOpen(false)}>تم</button>
             </div>
         </div>}
-    </>;
+    </div>;
 }
 
 function GuideDialog({ onClose }: { onClose: () => void }) {
@@ -443,52 +477,86 @@ function ConditionChecklist({ value, onChange }: { value: CondState; onChange: (
         if (!f) return;
         fileToSmallDataUrl(f, 320, (url) => onChange({ ...value, photos: [...value.photos, url] }));
     };
+    const boxCheck = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4 10-11"/></svg>;
     return <>
-        {COND_CHECKS.map((c, i) => <label key={c} className="nexus-check">
-            <input type="checkbox" checked={value.checks[i]} onChange={e => { const checks = [...value.checks]; checks[i] = e.target.checked; onChange({ ...value, checks }); }} />
-            <span>{c}</span>
-        </label>)}
-        <div className="nexus-cond-photos">
-            {value.photos.map((p, i) => <img key={i} src={p} className="nexus-cond-photo" alt={`صورة حالة الجهاز ${i + 1}`} />)}
-            {value.photos.length < 3 && <label className="nexus-cond-slot">
+        {COND_CHECKS.map((c, i) => {
+            const on = value.checks[i];
+            return <button key={c} type="button" className="nd-check" aria-pressed={on} style={{ padding: '7px 0', width: '100%', background: 'none', border: 0, color: 'inherit', fontFamily: 'inherit', textAlign: 'start' }}
+                onClick={() => { const checks = [...value.checks]; checks[i] = !on; onChange({ ...value, checks }); }}>
+                <span className={on ? 'nd-box' : 'nd-box off'}>{on && boxCheck}</span>
+                <span>{c}</span>
+            </button>;
+        })}
+        <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+            {value.photos.map((p, i) => <img key={i} src={p} style={{ width: 62, height: 62, borderRadius: 14, objectFit: 'cover' }} alt={`صورة حالة الجهاز ${i + 1}`} />)}
+            {value.photos.length < 3 && <label className="nd-btn2" style={{ width: 62, height: 62, borderRadius: 14, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 12 }}>
                 + صورة
                 <input type="file" accept="image/*" style={{ display: 'none' }} onChange={addPhoto} aria-label="ضيف صورة لحالة الجهاز" />
             </label>}
         </div>
-        <Caption>صور حالة الجهاز بتحميك وتحمي صاحبه لو حصل خلاف على التلف. لازم صورة واحدة على الأقل، وتقدر تضيف لحد 3.</Caption>
+        <div className="nd-note" style={{ marginTop: 8 }}>صور حالة الجهاز بتحميك وتحمي صاحبه لو حصل خلاف على التلف. لازم صورة واحدة على الأقل، وتقدر تضيف لحد 3.</div>
     </>;
 }
 
-function ConsoleDetailPage({ listing, busy, onRequest, onChat }: { listing: ConsoleListing | null; busy: Set<number>; onRequest: () => void; onChat: (name: string) => void }) {
-    if (!listing) return <Group label="تفاصيل الجهاز" heading="اختار جهاز الأول">
-        <Callout title="مفيش جهاز متختار" tone="note">ارجع للإعلانات ودوس على أي جهاز عشان تشوف تفاصيله.</Callout>
-        <Link className="file-button is-compact" data-variant="secondary" to="/">شوف الإعلانات</Link>
-    </Group>;
-    return <Group label="تفاصيل الجهاز" heading={listing.title}>
-        <img className="nexus-detail-photo" src={listing.photoData || PHOTOS[listing.photoKey || listing.kind.toLowerCase()]} alt={KIND_ALT[listing.kind] || 'جهاز ألعاب مع ذراع تحكم'} />
-        <div className="nexus-muted">{listing.owner} · {areaName(listing.area)}، {listing.district}</div>
-        <div className="nexus-muted"><Stars rating={listing.rating} reviews={listing.reviews} />' · توصيل بالمندوب'</div>
-        {listing.games.length > 0 && <div className="nexus-chips">{listing.games.map((g, i) => <span key={g} className="nexus-chip" style={gameChipStyle(i)}>{g}</span>)}</div>}
-        <Facts items={[
-            { label: 'الموديل', value: listing.model },
-            { label: 'المساحة', value: listing.storage },
-            { label: 'الدراعات', value: `${listing.controllers} ${listing.controllers === 1 ? 'دراع' : 'دراعات'}` },
-            ...(listing.includes ? [{ label: 'بييجي معاه', value: listing.includes }] : []),
-            { label: 'السعر', value: `${listing.pricePerDay} ج.م في اليوم` },
-            { label: 'التأمين بيرجع', value: `${listing.deposit} ج.م` },
-        ]} />
-        <Caption>الأيام المتاحة للحجز:</Caption>
-        <AvailabilityCalendar busy={busy} fromMs={null} days={0} />
-        <div className="nexus-card-actions">
-            <Link className="file-button is-compact" data-variant="primary" to="/request" onClick={onRequest}>اطلب إيجار</Link>
-            <FileButton variant="secondary" compact pill onClick={() => onChat(listing.owner)}>كلم {listing.owner}</FileButton>
-        </div>
-        <Caption>كل جهاز فيه جهاز تتبع ضد السرقة، وهتشوف ده وتوافق عليه قبل ما تأكد الطلب.</Caption>
-    </Group>;
+function DetailStars({ rating, reviews }: { rating: number; reviews: number }) {
+    const full = Math.max(0, Math.min(5, Math.round(rating || 0)));
+    const star = (on: boolean, key: number) => on
+        ? <svg key={key} viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17l-6.1 3.6 1.4-6.8L2.2 9.1l6.9-.8z"/></svg>
+        : <svg key={key} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" width="15" height="15" style={{ color: 'var(--nd-navmut)' }}><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17l-6.1 3.6 1.4-6.8L2.2 9.1l6.9-.8z"/></svg>;
+    return <div style={{ textAlign: 'left' }}>
+        <span style={{ color: 'var(--nd-acctext)', display: 'flex', gap: 1.5 }}>{[1, 2, 3, 4, 5].map(i => star(i <= full, i))}</span>
+        <div className="nd-note">{reviews ? `${rating} · ${reviews} تقييم` : 'لسه مفيش تقييمات'}</div>
+    </div>;
 }
 
-type IconName = 'grid' | 'map' | 'package' | 'plus' | 'list' | 'user' | 'headset' | 'help' | 'shield' | 'sun' | 'moon';
+function ConsoleDetailPage({ listing, busy, onRequest, onChat }: { listing: ConsoleListing | null; busy: Set<number>; onRequest: () => void; onChat: (name: string) => void }) {
+    if (!listing) return <div className="nd-page">
+        <div className="nd-topbar"><Link className="nd-back" to="/" aria-label="رجوع"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7"/></svg></Link><b>تفاصيل الجهاز</b><span style={{ width: 38 }} /></div>
+        <div className="nd-card" style={{ margin: '18px 22px' }}><div className="nd-note" style={{ marginBottom: 10 }}>مفيش جهاز متختار. ارجع للإعلانات ودوس على أي جهاز عشان تشوف تفاصيله.</div><Link className="nd-linklike" to="/">شوف الإعلانات</Link></div>
+    </div>;
+    const photo = listing.photoData || PHOTOS[listing.photoKey || listing.kind.toLowerCase()];
+    const facts: { label: string; value: React.ReactNode }[] = [
+        { label: 'التخزين', value: listing.storage },
+        { label: 'أذرع التحكم', value: `${listing.controllers}` },
+        { label: 'الألعاب', value: listing.games.length ? `${listing.games.length} ${listing.games.length === 1 ? 'لعبة' : 'ألعاب'}` : '—' },
+        { label: 'التأمين', value: `${listing.deposit} ج.م` },
+        { label: 'التوصيل', value: 'بالمندوب' },
+        { label: 'الموديل', value: listing.model },
+    ];
+    return <div className="nd-page" style={{ paddingBottom: 120 }}>
+        <div style={{ position: 'relative' }}>
+            <div className="nd-dhero">
+                <img src={photo} alt={KIND_ALT[listing.kind] || 'جهاز ألعاب مع ذراع تحكم'} className={photo.endsWith('.png') && !listing.photoData ? '' : 'panel'} />
+            </div>
+            <Link className="nd-back" to="/" aria-label="رجوع للإعلانات" style={{ position: 'absolute', top: 52, right: 22, boxShadow: '0 6px 16px rgba(0,0,0,.35)' }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7"/></svg></Link>
+            {busy.size === 0 && <span className="nd-chip2" style={{ position: 'absolute', top: 60, left: 22 }}>متاح دلوقتي</span>}
+        </div>
+        <div style={{ padding: '14px 22px 0' }}>
+            <div className="nd-row"><b style={{ fontSize: 21 }}>{listing.title}</b><b style={{ fontSize: 17, color: 'var(--nd-acctext)', flex: 'none' }}>{listing.pricePerDay} ج.م<span style={{ fontSize: 12, fontWeight: 600, marginInlineStart: 5 }}>/ اليوم</span></b></div>
+            <div className="nd-row" style={{ marginTop: 10, justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div className="nd-av">{listing.owner.trim().charAt(0)}</div>
+                    <div><b style={{ fontSize: 14 }}>{listing.owner}</b><div className="nd-note">{[listing.district, areaName(listing.area)].filter(Boolean).join('، ')}</div></div>
+                </div>
+                <DetailStars rating={listing.rating} reviews={listing.reviews} />
+            </div>
+            <div className="nd-card" style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px 8px', textAlign: 'center' }}>
+                {facts.map(f => <div key={f.label}><div className="nd-note">{f.label}</div><b style={{ fontSize: 13.5 }}>{f.value}</b></div>)}
+            </div>
+            {listing.includes && <div className="nd-note" style={{ marginTop: 12 }}>ييجي معاه: {listing.includes}. التأمين بيرجعلك كامل بعد فحص الرجوع.</div>}
+            {busy.size > 0 && <div className="nd-chip2 warn" style={{ marginTop: 10 }}>فيه أيام محجوزة الفترة الجاية — هتشوف المتاح وانت بتطلب</div>}
+            <div className="nd-note" style={{ marginTop: 12 }}>كل جهاز فيه جهاز تتبع ضد السرقة، وهتشوف ده وتوافق عليه قبل ما تأكد الطلب.</div>
+        </div>
+        <div className="nd-bottombar">
+            <Link className="nd-btn" style={{ flex: 1, textAlign: 'center', textDecoration: 'none' }} to="/request" onClick={onRequest}>اطلب الجهاز</Link>
+            <button type="button" className="nd-btn2" style={{ width: 52, borderRadius: 16, flex: 'none' }} onClick={() => onChat(listing.owner)} aria-label={`كلم ${listing.owner}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="21" height="21"><path d="M4 4h16v12H9l-5 4z"/></svg></button>
+        </div>
+    </div>;
+}
+
+type IconName = 'grid' | 'map' | 'package' | 'plus' | 'list' | 'user' | 'headset' | 'help' | 'shield' | 'sun' | 'moon' | 'home';
 const ICON_PATHS: Record<IconName, React.ReactNode> = {
+    home: <><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></>,
     sun: <><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5 5l1.7 1.7M17.3 17.3 19 19M19 5l-1.7 1.7M6.7 17.3 5 19" /></>,
     moon: <path d="M20 13.2A8.1 8.1 0 1 1 10.8 4a6.6 6.6 0 0 0 9.2 9.2z" />,
     grid: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
@@ -505,19 +573,167 @@ function Icon({ name, size }: { name: IconName; size?: number }) {
     return <svg width={size || 22} height={size || 22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="nexus-icon">{ICON_PATHS[name]}</svg>;
 }
 
-function BottomNav({ onGuide }: { onGuide: () => void }) {
-    return <nav className="nexus-bottomnav" aria-label="صفحات التطبيق">
-        <NavLink to="/" end className="nexus-tab"><Icon name="grid" /><span>الإعلانات</span></NavLink>
-        <NavLink to="/map" className="nexus-tab"><Icon name="map" /><span>الخريطة</span></NavLink>
-        <NavLink to="/order" className="nexus-tab"><Icon name="package" /><span>طلبك</span></NavLink>
-        <NavLink to="/add" className="nexus-tab"><Icon name="plus" /><span>أضف إعلانك</span></NavLink>
-        <NavLink to="/profile" className="nexus-tab"><Icon name="list" /><span>إعلاناتي</span></NavLink>
-        <NavLink to="/profile" className="nexus-tab"><Icon name="user" /><span>حسابك</span></NavLink>
-        <button type="button" className="nexus-tab nexus-tab-help" aria-label="طريقة الاستخدام" onClick={onGuide}><Icon name="help" size={24} /></button>
-    </nav>;
+const NAV_TABS: { to: string; icon: IconName; label: string; notch: string; bump: number }[] = [
+    { to: '/', icon: 'home', label: 'الإعلانات', notch: '87.5%', bump: 84 },
+    { to: '/map', icon: 'map', label: 'الخريطة', notch: '62.5%', bump: 59 },
+    { to: '/add', icon: 'plus', label: 'أضف إعلانك', notch: '37.5%', bump: 34 },
+    { to: '/profile', icon: 'user', label: 'حسابك', notch: '12.5%', bump: 9 },
+];
+
+function useHashPath() {
+    const [p, setP] = useState<string>(() => window.location.hash.replace(/^#/, '') || '/');
+    useEffect(() => {
+        const on = () => setP(window.location.hash.replace(/^#/, '') || '/');
+        window.addEventListener('hashchange', on);
+        return () => window.removeEventListener('hashchange', on);
+    }, []);
+    return p;
 }
 
-function MapPage({ consoles, onRequest, exactLoc }: { consoles: ConsoleListing[]; onRequest: (l: ConsoleListing) => void; exactLoc: Record<string, LatLng> }) {
+function ReviewPage({ order, consoles, onSubmit }: { order: OrderDoc | null; consoles: ConsoleListing[]; onSubmit: (o: OrderDoc, stars: number, tags: string[], text: string, ownerStars: number) => Promise<any> }) {
+    const [stars, setStars] = useState(0);
+    const [ownerStars, setOwnerStars] = useState(0);
+    const [tags, setTags] = useState<string[]>([]);
+    const [text, setText] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [sent, setSent] = useState(false);
+    const topbar = <div className="nd-topbar"><Link className="nd-back" to="/orders" aria-label="رجوع لطلباتك"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7"/></svg></Link><b>قيّم تجربتك</b><span style={{ width: 38 }} /></div>;
+    const starPath = 'M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17l-6.1 3.6 1.4-6.8L2.2 9.1l6.9-.8z';
+    const starRow = (val: number, set: (n: number) => void, size: number) => (
+        <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+            {[1, 2, 3, 4, 5].map(n => <button key={n} type="button" onClick={() => set(n)} aria-label={`${n} نجوم`}
+                style={{ background: 'none', border: 0, padding: 2, cursor: 'pointer', width: size, height: size, color: n <= val ? '#FFC93C' : 'var(--nd-navmut)' }}>
+                {n <= val
+                    ? <svg viewBox="0 0 24 24" fill="currentColor" width={size} height={size}><path d={starPath} /></svg>
+                    : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" width={size} height={size}><path d={starPath} /></svg>}
+            </button>)}
+        </div>);
+    if (!order) return <div className="nd-page">{topbar}
+        <div className="nd-card" style={{ margin: '18px 22px' }}><b style={{ fontSize: 14.5 }}>مفيش طلب للتقييم</b><div className="nd-note" style={{ margin: '6px 0 10px' }}>التقييم بيتاح بعد ما طلب يكمل ويرجع.</div><Link className="nd-linklike" to="/orders">طلباتي</Link></div>
+    </div>;
+    const l = consoles.find(c => c.id === order.deviceId);
+    const photo = l ? (l.photoData || PHOTOS[l.photoKey || l.kind.toLowerCase()]) : (PHOTOS[(order.title.split(' ')[0] || '').toLowerCase()] || PHOTOS.ps5);
+    const TAGS = ['الجهاز زي الوصف', 'نضيف', 'التسليم كان سريع'];
+    const toggleTag = (t: string) => setTags(ts => ts.includes(t) ? ts.filter(x => x !== t) : [...ts, t]);
+    if (sent) return <div className="nd-page">{topbar}
+        <div style={{ padding: '60px 22px 0', textAlign: 'center' }}>
+            <div className="nd-logo" style={{ margin: '0 auto' }}>✓</div>
+            <div style={{ fontSize: 20, fontWeight: 800, marginTop: 16 }}>شكرًا! تقييمك وصل</div>
+            <div className="nd-note" style={{ marginTop: 8 }}>تقييمك بيساعد الناس تختار صاح وبيرفع مستوى المجتمع.</div>
+            <Link className="nd-btn" style={{ display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 22 }} to="/orders">ارجع لطلباتي</Link>
+        </div>
+    </div>;
+    const submit = async () => {
+        if (busy || stars === 0) return;
+        setBusy(true);
+        await onSubmit(order, stars, tags, text, ownerStars);
+        setBusy(false); setSent(true);
+    };
+    return <div className="nd-page" style={{ paddingBottom: 130 }}>
+        {topbar}
+        <div style={{ textAlign: 'center', marginTop: 22 }}>
+            <div className="nd-thumb" style={{ width: 84, height: 84, margin: '0 auto', borderRadius: 22 }}><img src={photo} alt={order.title} /></div>
+            <div style={{ fontSize: 17, fontWeight: 800, marginTop: 10 }}>{order.title}</div>
+            <div className="nd-note" style={{ marginTop: 2 }}>{yom(order.days)} · من {order.ownerName}</div>
+            <div style={{ marginTop: 14 }}>{starRow(stars, setStars, 34)}</div>
+        </div>
+        <div style={{ padding: '34px 22px 0', display: 'flex', flexDirection: 'column', gap: 11 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {TAGS.map(t => <button key={t} type="button" className={`nd-chip2${tags.includes(t) ? ' on' : ''}`} style={{ cursor: 'pointer', border: 0, fontFamily: 'inherit' }} onClick={() => toggleTag(t)}>{t}</button>)}
+            </div>
+            <div className="nd-field" style={{ minHeight: 78 }}>
+                <label>كلمتين عن تجربتك</label>
+                <textarea className="nd-area" value={text} onChange={(e) => setText(e.target.value)} placeholder="مثال: الجهاز كان نضيف وشغال تمام، والمالك كان متعاون" maxLength={300} />
+            </div>
+            <div className="nd-card nd-row">
+                <div><b style={{ fontSize: 13.5 }}>وقيّم {order.ownerName.split(' ')[0]} كمان</b><div className="nd-note">تقييمك بيرفع مستوى المجتمع</div></div>
+                {starRow(ownerStars, setOwnerStars, 20)}
+            </div>
+        </div>
+        <div className="nd-bottombar">
+            <button type="button" className="nd-btn" disabled={stars === 0 || busy} onClick={submit}>{busy ? 'بنبعت...' : 'ابعت التقييم'}</button>
+        </div>
+    </div>;
+}
+
+function OrdersPage({ myOrders, consoles, onTrack, onCancelRequest, onOpenOrder, onRate }: { myOrders: OrderDoc[]; consoles: ConsoleListing[]; onTrack: (l: ConsoleListing) => void; onCancelRequest: (id: string) => void; onOpenOrder: () => void; onRate: (o: OrderDoc) => void }) {
+    const photoFor = (o: OrderDoc) => {
+        const l = consoles.find(c => c.id === o.deviceId);
+        if (l) return l.photoData || PHOTOS[l.photoKey || l.kind.toLowerCase()];
+        const kind = (o.title.split(' ')[0] || '').toLowerCase();
+        return PHOTOS[kind] || PHOTOS.ps5;
+    };
+    const ACTIVE: OrderStatus[] = ['accepted', 'taken', 'pickedup', 'arrived'];
+    const live = myOrders.filter(o => ACTIVE.includes(o.status) || o.status === 'delivered' || o.status === 'returning');
+    const waiting = myOrders.filter(o => o.status === 'requested');
+    const history = myOrders.filter(o => o.status === 'returned' || o.status === 'declined').sort((a, b) => b.createdMs - a.createdMs);
+    const remainingDays = (o: OrderDoc) => {
+        const start = o.deliveredAt || o.createdMs;
+        return Math.max(0, Math.ceil((start + o.days * 86400000 - Date.now()) / 86400000));
+    };
+    const progressFor = (o: OrderDoc) => {
+        if (o.status === 'delivered' || o.status === 'returning') {
+            const start = o.deliveredAt || o.createdMs;
+            return Math.min(100, Math.max(6, Math.round(((Date.now() - start) / (o.days * 86400000)) * 100)));
+        }
+        return { accepted: 15, taken: 35, pickedup: 60, arrived: 85 }[o.status as string] || 10;
+    };
+    const card = (o: OrderDoc) => {
+        const isLive = live.includes(o);
+        const isRental = o.status === 'delivered' || o.status === 'returning';
+        const listing = consoles.find(c => c.id === o.deviceId);
+        return <div className="nd-card" key={o.id}>
+            <div className="nd-row" style={{ justifyContent: 'flex-start' }}>
+                <div className="nd-thumb"><img src={photoFor(o)} alt={o.title} /></div>
+                <div style={{ flex: 1 }}><b style={{ fontSize: 14 }}>{o.title}</b><div className="nd-note">من {o.ownerName} · {yom(o.days)}</div></div>
+                {o.status === 'requested' && <span className="nd-chip2">في انتظار المالك</span>}
+                {isRental && <span className="nd-chip2 ok">نشط</span>}
+                {ACTIVE.includes(o.status) && <span className="nd-chip2 on">جاري التوصيل</span>}
+                {o.status === 'returned' && <span className="nd-chip2">مكتمل</span>}
+                {o.status === 'declined' && <span className="nd-chip2">اترفض</span>}
+            </div>
+            {isLive && <>
+                {ACTIVE.includes(o.status) && <div className="nd-pbar" style={{ marginTop: 12 }}><i style={{ width: `${progressFor(o)}%` }} /></div>}
+                <div className="nd-note" style={{ marginTop: 6 }}>{isRental ? `باقي ${yom(remainingDays(o))} على الإرجاع` : statusAr(o.status)}</div>
+                {isRental && listing && <button type="button" className="nd-btn2" style={{ marginTop: 12, padding: 10, width: '100%' }} onClick={() => onTrack({ ...listing, trackNote: `مع ${o.ownerName} · باقي ${yom(remainingDays(o))} على الرجوع` })}>
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-3px', marginInlineEnd: 6 }}><path d="M12 21s7-6.1 7-11a7 7 0 1 0-14 0c0 4.9 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/></svg>
+                    مكان جهازك دلوقتي</button>}
+            </>}
+            {o.status === 'requested' && <>
+                <div className="nd-note" style={{ marginTop: 8 }}>المالك لسه مردش. هيوصلك رده هنا وفي حسابك.</div>
+                <button type="button" className="nd-btn2" style={{ marginTop: 10, padding: 10, width: '100%' }} onClick={() => onCancelRequest(o.id)}>إلغاء الطلب</button>
+            </>}
+            {o.status === 'returned' && (o.reviewed
+                ? <div style={{ marginTop: 10, fontSize: 13, color: 'var(--nd-acctext)', fontWeight: 700 }}>تم التقييم، شكرًا ✓</div>
+                : <button type="button" className="nd-btn2" style={{ marginTop: 12, padding: 10, width: '100%' }} onClick={() => onRate(o)}>قيّم تجربتك ←</button>)}
+            {o.status === 'declined' && <div className="nd-note" style={{ marginTop: 8 }}>المالك اعتذر عن الطلب ده. تقدر تطلب جهاز تاني من الإعلانات.</div>}
+        </div>;
+    };
+    return <div className="nd-page" style={{ paddingBottom: 120 }}>
+        <div className="nd-topbar"><Link className="nd-back" to="/profile" aria-label="رجوع لحسابك"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7"/></svg></Link><b>طلباتي</b><span style={{ width: 38 }} /></div>
+        <div style={{ padding: '4px 22px 0', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {[...live, ...waiting, ...history].map(card)}
+            {myOrders.length === 0 && <div className="nd-card"><b style={{ fontSize: 14.5 }}>لسه مفيش طلبات</b><div className="nd-note" style={{ marginTop: 6 }}>أول ما تطلب جهاز هيظهر هنا بحالته لايف. <Link className="nd-linklike" to="/">شوف الإعلانات</Link></div></div>}
+            {myOrders.length > 0 && <button type="button" className="nd-btn2" style={{ padding: 12, width: '100%' }} onClick={onOpenOrder}>تابع طلبك الحالي بالتفصيل</button>}
+        </div>
+    </div>;
+}
+
+function BottomNav() {
+    const path = useHashPath();
+    if (!['/', '/map', '/orders', '/profile'].includes(path)) return null;
+    let act = NAV_TABS.findIndex(t => t.to === path);
+    if (act < 0) act = path === '/orders' ? 3 : 0;
+    const t = NAV_TABS[act];
+    return <>
+        <nav className="nd-nav" style={{ '--nd-notch': t.notch } as React.CSSProperties} aria-label="صفحات التطبيق">
+            {NAV_TABS.map((tab, i) => <NavLink key={tab.to} to={tab.to} end={tab.to === '/'} className={i === act ? 'nd-tab on' : 'nd-tab'} aria-label={tab.label}><Icon name={tab.icon} /></NavLink>)}
+        </nav>
+        <div className="nd-bump" style={{ '--nd-bump': t.bump } as React.CSSProperties} aria-hidden="true"><Icon name={t.icon} /></div>
+    </>;
+}
+
+function MapPage({ consoles, onOpen, exactLoc }: { consoles: ConsoleListing[]; onOpen: (l: ConsoleListing) => void; exactLoc: Record<string, LatLng> }) {
     const [selected, setSelected] = useState<number | null>(null);
     const [locNote, setLocNote] = useState('');
     const [locating, setLocating] = useState(false);
@@ -540,7 +756,7 @@ function MapPage({ consoles, onRequest, exactLoc }: { consoles: ConsoleListing[]
 
     useEffect(() => {
         if (!mapDivRef.current || leafletMapRef.current) return;
-        const map = L.map(mapDivRef.current).setView([30.0, 30.95], 11);
+        const map = L.map(mapDivRef.current, { zoomControl: false }).setView([30.0, 30.95], 11);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -563,12 +779,12 @@ function MapPage({ consoles, onRequest, exactLoc }: { consoles: ConsoleListing[]
                 L.circle(pos, { radius: 380, color: '#C724B1', weight: 1, dashArray: '6 6', fillColor: '#C724B1', fillOpacity: 0.06 }).addTo(group);
             }
             const icon = L.divIcon({
-                className: selected === l.number ? 'nexus-pin is-selected' : 'nexus-pin',
-                html: `<span>${l.number}</span>`,
-                iconSize: [30, 30],
-                iconAnchor: [15, 15],
+                className: 'nd-leafpin',
+                html: `<span class="nd-pin${selected === l.number ? '' : ' grey'}">${l.pricePerDay} ج.م</span>`,
+                iconSize: [64, 28],
+                iconAnchor: [32, 14],
             });
-            const marker = L.marker(pos, { icon, title: `جهاز رقم ${l.number}: ${l.title}` }).addTo(group);
+            const marker = L.marker(pos, { icon, title: `${l.title}: ${l.pricePerDay} ج.م / اليوم` }).addTo(group);
             marker.on('click', () => setSelected(l.number));
         });
         group.addTo(map);
@@ -615,19 +831,34 @@ function MapPage({ consoles, onRequest, exactLoc }: { consoles: ConsoleListing[]
         );
     };
 
+    useEffect(() => {
+        try {
+            if (new URLSearchParams(window.location.search).get('shot_sel') === '1' && selected === null && consoles.length) setSelected(consoles[0].number);
+        } catch { /* تجاهل */ }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [consoles]);
     const current = consoles.find(l => l.number === selected);
-    return <Group label="الخريطة" heading="الأجهزة حوالينك">
-        <div ref={mapDivRef} className="nexus-map-real" role="application" aria-label="خريطة أماكن الأجهزة في الشيخ زايد و6 أكتوبر" />
-        <Caption>خريطة حقيقية من OpenStreetMap. دوس على رقم تشوف تفاصيله. مكان كل جهاز بيظهر تقريبي جوه دايرة حوالي ٣٥٠ متر — المكان الدقيق محفوظ لوحده على السيرفر، وحدش يقدر يشوفه غير المالك نفسه والمندوب وقت الاستلام.</Caption>
-        <FileButton variant="secondary" compact pill onClick={showMyLocation} disabled={locating}>{locating ? 'بنحدد مكانك...' : 'أظهر مكاني على الخريطة'}</FileButton>
-        {locNote && <Caption>{locNote}</Caption>}
-        {current
-            ? <ConsoleCard listing={current} onRequest={() => onRequest(current)} />
-            : <Callout title="اختار جهاز من الخريطة" tone="note">كل رقم على الخريطة هو جهاز معروض للإيجار.</Callout>}
-    </Group>;
+    return <div className="nd-page">
+        <div className="nd-mapwrap"><div ref={mapDivRef} className="nd-mapreal" role="application" aria-label="خريطة أماكن الأجهزة في الشيخ زايد و6 أكتوبر" /></div>
+        <button type="button" className="nd-searchpill" onClick={showMyLocation} disabled={locating}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3"/></svg>
+            {locating ? 'بنحدد مكانك...' : 'أظهر مكاني على الخريطة'}
+        </button>
+        {locNote && <div className="nd-mapcard" style={{ bottom: 104 }}><div className="nd-note">{locNote}</div></div>}
+        {!locNote && (current
+            ? <div className="nd-mapcard">
+                <div className="nd-row" style={{ justifyContent: 'flex-start' }}>
+                    <div className="nd-thumb"><img src={current.photoData || PHOTOS[current.photoKey || current.kind.toLowerCase()]} alt={KIND_ALT[current.kind] || 'جهاز ألعاب'} /></div>
+                    <div style={{ flex: 1 }}><b style={{ fontSize: 14.5 }}>{current.kind} {current.model}</b><div className="nd-note">{[current.district, areaName(current.area)].filter(Boolean).join('، ')} · المكان تقريبي</div><Stars rating={current.rating} reviews={current.reviews} /></div>
+                    <div style={{ textAlign: 'left' }}><b style={{ color: 'var(--nd-acctext)', fontSize: 14 }}>{current.pricePerDay} ج.م</b><div className="nd-note">/ اليوم</div></div>
+                </div>
+                <button type="button" className="nd-btn" style={{ marginTop: 12, padding: 11 }} onClick={() => onOpen(current)}>عرض التفاصيل</button>
+            </div>
+            : <div className="nd-mapcard"><div className="nd-note" style={{ fontSize: 12.5 }}>دوس على أي سعر على الخريطة تشوف تفاصيل الجهاز. مكان كل جهاز بيظهر تقريبي جوه دايرة حوالي ٣٥٠ متر — المكان الدقيق محفوظ لوحده على السيرفر، وحدش يقدر يشوفه غير المالك نفسه والمندوب وقت الاستلام.</div></div>)}
+    </div>;
 }
 
-function RequestPage({ target, hasOpenRequest, busy, onConfirm }: { target: { title: string; owner: string; ownerLine: string; pricePerDay: number; deposit: number; number: number; deviceId?: string; ownerId?: string } | null; hasOpenRequest: boolean; busy: Set<number>; onConfirm: (r: { days: number; rent: number; deposit: number; fromMs: number; deliveryFee: number; promo: string; discount: number; payMethod: string }) => void }) {
+function RequestPage({ target, hasOpenRequest, busy, onConfirm }: { target: { title: string; owner: string; ownerLine: string; pricePerDay: number; deposit: number; number: number; deviceId?: string; ownerId?: string; kind?: string; photoKey?: string; photoData?: string } | null; hasOpenRequest: boolean; busy: Set<number>; onConfirm: (r: { days: number; rent: number; deposit: number; fromMs: number; deliveryFee: number; promo: string; discount: number; payMethod: string }) => void }) {
     const [days, setDays] = useState(2);
     const [fromMs, setFromMs] = useState<number | null>(null);
     const [payMethod, setPayMethod] = useState('كاش عند الاستلام');
@@ -638,38 +869,39 @@ function RequestPage({ target, hasOpenRequest, busy, onConfirm }: { target: { ti
     const [termsAccepted, setTermsAccepted] = useState(false);
     const [termsOpen, setTermsOpen] = useState(false);
     const [done, setDone] = useState(false);
-    if (!target) return <Group label="طلب إيجار" heading="اختار جهاز الأول">
-        <Callout title="مفيش جهاز متختار" tone="note">ارجع للإعلانات واختار جهاز أو دراع أو لعبة، وبعدين دوس اطلب إيجار.</Callout>
-        <Link className="file-button is-compact" data-variant="secondary" to="/">شوف الإعلانات</Link>
-    </Group>;
+    const topbar = (title: string) => <div className="nd-topbar"><Link className="nd-back" to="/detail" aria-label="رجوع"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7"/></svg></Link><b>{title}</b><span style={{ width: 38 }} /></div>;
+    if (!target) return <div className="nd-page">{topbar('الحجز')}
+        <div className="nd-card" style={{ margin: '18px 22px' }}><div className="nd-note" style={{ marginBottom: 10 }}>مفيش جهاز متختار. ارجع للإعلانات واختار جهاز، وبعدين دوس اطلب الجهاز.</div><Link className="nd-linklike" to="/">شوف الإعلانات</Link></div>
+    </div>;
     const rent = days * target.pricePerDay;
     const discount = promo ? Math.round(rent * (PROMO_CODES[promo] || 0)) : 0;
     const deliveryFee = DELIVERY_FEE;
     const total = rent - discount + deliveryFee + target.deposit;
-    if (done) {
-        return <Group label="طلب إيجار" heading="طلبك اتسجل">
-            <Callout title="طلبك اتبعت للمالك على السيرفر" tone="note">المالك هيشوف طلبك في حسابه في نفس اللحظة ويرد عليك: متاح أو مش متاح. تقدر تكلمه من زرار الشات جنب الطلب في صفحة حسابك، وتتابع كل التحديثات لايف من صفحة طلبك.</Callout>
-            <Facts items={[
-                { label: 'الحاجة', value: target.title },
-                ...(fromMs !== null ? [{ label: 'يوم الاستلام', value: new Date(fromMs).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' }) }] : []),
-                { label: 'المدة', value: yom(days) },
-                { label: 'الإيجار', value: `${rent} ج.م` },
-                ...(discount ? [{ label: `خصم كود ${promo}`, value: `- ${discount} ج.م` }] : []),
-                { label: 'التوصيل بالمندوب', value: `${DELIVERY_FEE} ج.م` },
-                { label: 'التأمين (محجوز عند المنصة)', value: `${target.deposit} ج.م` },
-                { label: 'المطلوب عند الاستلام', value: `${total} ج.م` },
-                { label: 'طريقة الدفع', value: payMethod },
-                { label: 'التتبع', value: 'وافقت على جهاز التتبع ضد السرقة' },
-                { label: 'العقد', value: 'وافقت على عقد الإيجار والشروط' },
-            ]} />
-            <Link className="file-button is-compact" data-variant="primary" to="/order">تابع وصول جهازك لايف</Link>
-            <Link className="file-button is-compact" data-variant="secondary" to="/profile">شوف طلبك في حسابك</Link>
-        </Group>;
-    }
-    if (hasOpenRequest) return <Group label="طلب إيجار" heading="عندك طلب مفتوح">
-        <Callout title="لازم تخلص اللي معاك الأول" tone="warning">مش ممكن تطلب أكتر من طلب في نفس الوقت. خلص أو الغي الطلب اللي عندك من صفحة حسابك، وبعدين اطلب تاني.</Callout>
-        <Link className="file-button is-compact" data-variant="secondary" to="/profile">روح لحسابك</Link>
-    </Group>;
+    if (done) return <div className="nd-page">{topbar('الحجز')}
+        <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="nd-card"><b style={{ fontSize: 15 }}>طلبك اتسجل واتبعت للمالك على السيرفر</b><div className="nd-note" style={{ marginTop: 6 }}>المالك هيشوف طلبك في حسابه في نفس اللحظة ويرد عليك. تقدر تكلمه من زرار الشات جنب الطلب في صفحة حسابك، وتتابع التحديثات لايف من صفحة طلبك.</div></div>
+            <div className="nd-card" style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                <div className="nd-row"><span className="nd-note" style={{ fontSize: 12.5 }}>الحاجة</span><b style={{ fontSize: 13 }}>{target.title}</b></div>
+                {fromMs !== null && <div className="nd-row"><span className="nd-note" style={{ fontSize: 12.5 }}>يوم الاستلام</span><b style={{ fontSize: 13 }}>{new Date(fromMs).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}</b></div>}
+                <div className="nd-row"><span className="nd-note" style={{ fontSize: 12.5 }}>المدة</span><b style={{ fontSize: 13 }}>{yom(days)}</b></div>
+                <div className="nd-row"><span className="nd-note" style={{ fontSize: 12.5 }}>الإيجار</span><b style={{ fontSize: 13 }}>{rent} ج.م</b></div>
+                {discount > 0 && <div className="nd-row"><span className="nd-note" style={{ fontSize: 12.5 }}>خصم كود {promo}</span><b style={{ fontSize: 13, color: '#34d399' }}>−{discount} ج.م</b></div>}
+                <div className="nd-row"><span className="nd-note" style={{ fontSize: 12.5 }}>التوصيل بالمندوب</span><b style={{ fontSize: 13 }}>{deliveryFee} ج.م</b></div>
+                <div className="nd-row"><span className="nd-note" style={{ fontSize: 12.5 }}>التأمين (محجوز عند المنصة)</span><b style={{ fontSize: 13 }}>{target.deposit} ج.م</b></div>
+                <div style={{ borderTop: '1px dashed var(--nd-navmut)', opacity: .7 }} />
+                <div className="nd-row"><b style={{ fontSize: 14.5 }}>المطلوب عند الاستلام</b><b style={{ fontSize: 16, color: 'var(--nd-acctext)' }}>{total} ج.م</b></div>
+                <div className="nd-row"><span className="nd-note" style={{ fontSize: 12.5 }}>طريقة الدفع</span><b style={{ fontSize: 13 }}>{payMethod}</b></div>
+            </div>
+            <Link className="nd-btn" style={{ textAlign: 'center', textDecoration: 'none' }} to="/order">تابع وصول جهازك لايف</Link>
+            <Link className="nd-btn2" style={{ textAlign: 'center', textDecoration: 'none', display: 'block', padding: 13 }} to="/profile">شوف طلبك في حسابك</Link>
+        </div>
+    </div>;
+    if (hasOpenRequest) return <div className="nd-page">{topbar('الحجز')}
+        <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="nd-card"><b style={{ fontSize: 15 }}>عندك طلب مفتوح</b><div className="nd-note" style={{ marginTop: 6 }}>مش ممكن تطلب أكتر من طلب في نفس الوقت. خلص أو الغي الطلب اللي عندك من صفحة حسابك، وبعدين اطلب تاني.</div></div>
+            <Link className="nd-btn2" style={{ textAlign: 'center', textDecoration: 'none', display: 'block', padding: 13 }} to="/profile">روح لحسابك</Link>
+        </div>
+    </div>;
     const rangeHasBusy = fromMs !== null && Array.from({ length: days }).some((_, i) => busy.has(dayStamp(fromMs) + i * 86400000));
     const ready = accepted && termsAccepted && fromMs !== null && !rangeHasBusy;
     const applyPromo = () => {
@@ -678,42 +910,71 @@ function RequestPage({ target, hasOpenRequest, busy, onConfirm }: { target: { ti
         if (PROMO_CODES[code]) { setPromo(code); setPromoError(''); }
         else { setPromo(''); setPromoError('الكود ده مش صحيح أو خلص. جرب NEXUS10.'); }
     };
-    return <Group label="طلب إيجار" heading={target.title}>
-        <Paragraph>{target.ownerLine}</Paragraph>
-        <Caption>اختار يوم الاستلام من التقويم. الأيام الرمادي محجوزة ومش بتتاختار.</Caption>
-        <AvailabilityCalendar busy={busy} fromMs={fromMs} days={days} onPick={setFromMs} />
-        {rangeHasBusy && <Callout title="المدة دي فيها أيام محجوزة" tone="danger">الجهاز مش متاح في كل الأيام دي. قلل عدد الأيام أو اختار يوم بداية تاني.</Callout>}
-        <Slider label="عدد الأيام" min={1} max={7} value={days} onChange={(v: number) => setDays(v)} describe={(v: number) => v === 1 ? 'يوم واحد' : yom(v)} />
-        <Callout title="الاستلام والإرجاع دايمًا عن طريق مندوب المنصة" tone="note">مفيش استلام بنفسك: مندوب NEXUS بيستلم الجهاز من المالك، بيراجعه وبيحط فيه AirTag تتبع، وبيوصله ليك لحد الباب. وفي الإرجاع بياخده منك، بيتشيك عليه وبيشيل الـ AirTag ويرجعه لصاحبه. رسوم التوصيل {DELIVERY_FEE} ج.م.</Callout>
-        <ChoiceRow label="طريقة الدفع" options={['كاش عند الاستلام', 'فودافون كاش', 'إنستاباي'].map(v => ({ value: v, label: v }))} value={payMethod} onChange={setPayMethod} />
-        <Caption>الدفع بيتم بينك وبين المندوب عند الاستلام (مفيش دفع إلكتروني جوه التطبيق لسه). والتأمين بيتحجز عند المنصة مش عند المالك.</Caption>
-        <div className="nexus-promo-row">
-            <input className="nexus-promo-input" dir="ltr" placeholder="كود الخصم" value={promoInput} onChange={e => setPromoInput(e.target.value)} aria-label="كود الخصم" />
-            <FileButton variant="secondary" compact pill onClick={applyPromo}>طبق</FileButton>
+    const photo = target.photoData || (target.photoKey || target.kind ? PHOTOS[target.photoKey || (target.kind || '').toLowerCase()] : '');
+    const checkSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>;
+    return <div className="nd-page" style={{ paddingBottom: 110 }}>
+        {topbar('الحجز')}
+        <div style={{ padding: '4px 22px 0', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="nd-card nd-row" style={{ justifyContent: 'flex-start' }}>
+                <div className="nd-thumb">{photo && <img src={photo} alt={target.title} />}</div>
+                <div style={{ flex: 1 }}><b style={{ fontSize: 14.5 }}>{target.title}</b><div className="nd-note">{target.ownerLine}</div></div>
+                <b style={{ color: 'var(--nd-acctext)', fontSize: 13.5, flex: 'none' }}>{target.pricePerDay} ج.م/يوم</b>
+            </div>
+            <div className="nd-card">
+                <div className="nd-row"><b style={{ fontSize: 14 }}>عدد الأيام</b><b style={{ fontSize: 20, color: 'var(--nd-acctext)' }}>{days}</b></div>
+                <input type="range" className="nd-range" min={1} max={7} value={days} onChange={e => setDays(parseInt(e.target.value))} aria-label="عدد الأيام" style={{ marginTop: 12 }} />
+                <div className="nd-row" style={{ marginTop: 6 }}><span className="nd-note">يوم</span><span className="nd-note">٧ أيام</span></div>
+            </div>
+            <div className="nd-card">
+                <b style={{ fontSize: 13.5, display: 'block', marginBottom: 8 }}>يوم الاستلام</b>
+                <div className="nd-note" style={{ marginBottom: 6 }}>اختار من التقويم. الأيام الرمادي محجوزة ومش بتتاختار.</div>
+                <AvailabilityCalendar busy={busy} fromMs={fromMs} days={days} onPick={setFromMs} />
+            </div>
+            {rangeHasBusy && <div className="nd-err">المدة دي فيها أيام محجوزة. قلل عدد الأيام أو اختار يوم بداية تاني.</div>}
+            <div className="nd-card nd-row">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><svg width="20" height="20" style={{ color: 'var(--nd-acctext)', flex: 'none' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg><div><b style={{ fontSize: 13.5 }}>توصيل بالمندوب</b><div className="nd-note">الاستلام والرجوع عن طريق مندوبنا بس — مفيش استلام بنفسك</div></div></div>
+                <b style={{ fontSize: 13, flex: 'none' }}>+{DELIVERY_FEE} ج.م</b>
+            </div>
+            <div className="nd-card">
+                <b style={{ fontSize: 13.5, display: 'block', marginBottom: 8 }}>طريقة الدفع</b>
+                <div className="nd-seg">{['كاش عند الاستلام', 'فودافون كاش', 'إنستاباي'].map(v => <button key={v} type="button" className={payMethod === v ? 'on' : ''} onClick={() => setPayMethod(v)}>{v}</button>)}</div>
+                <div className="nd-note" style={{ marginTop: 8 }}>الدفع بيتم بينك وبين المندوب عند الاستلام (مفيش دفع إلكتروني جوه التطبيق لسه). والتأمين بيتحجز عند المنصة مش عند المالك.</div>
+            </div>
+            <div className="nd-field" style={{ marginTop: 0 }}>
+                <label>كود الخصم</label>
+                {promo
+                    ? <div className="nd-row" style={{ padding: '12px 0 4px' }}><div style={{ color: 'var(--nd-acctext)', fontWeight: 700 }}>{promo}</div><span className="nd-chip2 ok">اتطبق −{Math.round((PROMO_CODES[promo] || 0) * 100)}٪؜</span></div>
+                    : <div className="nd-row" style={{ gap: 8, paddingBottom: 4 }}>
+                        <input className="nd-input" dir="ltr" placeholder="NEXUS10" value={promoInput} onChange={e => setPromoInput(e.target.value)} aria-label="كود الخصم" style={{ flex: 1 }} />
+                        <button type="button" className="nd-btn2" style={{ padding: '10px 18px', flex: 'none' }} onClick={applyPromo}>طبق</button>
+                    </div>}
+                {promoError && <div className="nd-err" style={{ marginBottom: 8 }}>{promoError}</div>}
+            </div>
+            <div className="nd-card" style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                <div className="nd-row"><span className="nd-note" style={{ fontSize: 12.5 }}>الإيجار ({days} × {target.pricePerDay})</span><b style={{ fontSize: 13 }}>{rent} ج.م</b></div>
+                {discount > 0 && <div className="nd-row"><span className="nd-note" style={{ fontSize: 12.5 }}>خصم {promo}</span><b style={{ fontSize: 13, color: '#34d399' }}>−{discount} ج.م</b></div>}
+                <div className="nd-row"><span className="nd-note" style={{ fontSize: 12.5 }}>التوصيل</span><b style={{ fontSize: 13 }}>{deliveryFee} ج.م</b></div>
+                <div className="nd-row"><span className="nd-note" style={{ fontSize: 12.5 }}>تأمين مسترد</span><b style={{ fontSize: 13 }}>{target.deposit} ج.م</b></div>
+                <div style={{ borderTop: '1px dashed var(--nd-navmut)', opacity: .7 }} />
+                <div className="nd-row"><b style={{ fontSize: 14.5 }}>الإجمالي</b><b style={{ fontSize: 16, color: 'var(--nd-acctext)' }}>{total} ج.م</b></div>
+            </div>
+            <div className="nd-note">التأمين بيتحجز عند منصة NEXUS طول مدة الإيجار وبيرجعلك كامل بعد ما تسلم الجهاز سليم. لو فيه تلف بيتخصم منه بعد المعاينة، ولو رجعت الجهاز قبل المعاد فرق الأيام بيرجعلك.</div>
+            <button type="button" className="nd-check" onClick={() => setAccepted(!accepted)} aria-pressed={accepted}>
+                <span className={accepted ? 'nd-box' : 'nd-box off'}>{accepted && checkSvg}</span>
+                <span>فاهم وموافق إن الجهاز فيه جهاز تتبع ضد السرقة بيشتغل طول مدة الإيجار، وصاحب الجهاز يقدر يشوف مكانه.</span>
+            </button>
+            <button type="button" className="nd-check" onClick={() => setTermsAccepted(!termsAccepted)} aria-pressed={termsAccepted}>
+                <span className={termsAccepted ? 'nd-box' : 'nd-box off'}>{termsAccepted && checkSvg}</span>
+                <span>قريت <span className="nd-linklike" onClick={e => { e.stopPropagation(); setTermsOpen(true); }}>عقد الإيجار والشروط</span> وموافق عليه، بما فيه شروط التلف والتأمين.</span>
+            </button>
+            <div className="nd-note" style={{ textAlign: 'center' }}>الدفع {payMethod === 'كاش عند الاستلام' ? 'كاش' : payMethod} عند الاستلام · التأمين بيرجع كامل بعد الفحص</div>
+            {!ready && <div className="nd-note" style={{ textAlign: 'center' }}>اختار يوم استلام فاضي من التقويم، ووافق على التتبع وعقد الإيجار عشان تقدر تأكد.</div>}
         </div>
-        {promo && <Caption>كود {promo} اشتغل: خصم {Math.round((PROMO_CODES[promo] || 0) * 100)} في المية من الإيجار.</Caption>}
-        {promoError && <Caption>{promoError}</Caption>}
-                <Facts items={[
-            { label: 'الإيجار', value: `${rent} ج.م` },
-            ...(discount ? [{ label: `خصم كود ${promo}`, value: `- ${discount} ج.م` }] : []),
-            { label: 'التوصيل بالمندوب', value: `${DELIVERY_FEE} ج.م` },
-            { label: 'التأمين (محجوز عند المنصة)', value: `${target.deposit} ج.م` },
-            { label: 'المطلوب عند الاستلام', value: `${total} ج.م` },
-        ]} />
-        <Callout title="التأمين محجوز عند المنصة" tone="note">التأمين بيتحجز عند منصة NEXUS طول مدة الإيجار، وبيرجع لك كامل بعد ما تسلم الجهاز سليم. لو فيه تلف بيتخصم منه بعد المعاينة. ولو رجعت الجهاز قبل المعاد، فرق الأيام بيرجعلك.</Callout>
-        <Callout title="الجهاز فيه جهاز تتبع ضد السرقة" tone="warning">صاحب الجهاز يقدر يشوف مكانه عن طريق GPS أو AirTag جواه طول مدة الإيجار. لازم تشوف ده وتوافق عليه قبل ما تأكد الطلب.</Callout>
-        <label className="nexus-check">
-            <input type="checkbox" checked={accepted} onChange={e => setAccepted(e.target.checked)} />
-            <span>فاهم وموافق إن الجهاز فيه جهاز تتبع ضد السرقة بيشتغل طول مدة الإيجار.</span>
-        </label>
-        <label className="nexus-check">
-            <input type="checkbox" checked={termsAccepted} onChange={e => setTermsAccepted(e.target.checked)} />
-            <span>قريت <button type="button" className="nexus-linklike" onClick={() => setTermsOpen(true)}>عقد الإيجار والشروط</button> وموافق عليه، بما فيه شروط التلف والتأمين.</span>
-        </label>
-        <FileButton variant="primary" pill disabled={!ready} onClick={() => { if (!ready) return; onConfirm({ days, rent, deposit: target.deposit, fromMs: fromMs || Date.now(), deliveryFee, promo, discount, payMethod }); setDone(true); }}>أكد الطلب</FileButton>
-        {!ready && <Caption>اختار يوم استلام فاضي من التقويم، ووافق على التتبع وعقد الإيجار عشان تقدر تأكد.</Caption>}
+        <div className="nd-bottombar">
+            <button type="button" className="nd-btn" style={{ flex: 1, border: 0 }} disabled={!ready} onClick={() => { if (!ready) return; onConfirm({ days, rent, deposit: target.deposit, fromMs: fromMs || Date.now(), deliveryFee, promo, discount, payMethod }); setDone(true); }}>أكد الحجز</button>
+        </div>
         {termsOpen && <TermsDialog onAccept={() => { setTermsAccepted(true); setTermsOpen(false); }} onClose={() => setTermsOpen(false)} />}
-    </Group>;
+    </div>;
 }
 
 function LocationPicker({ area, value, onChange }: { area: 'زايد' | 'أكتوبر'; value: LatLng | null; onChange: (v: LatLng) => void }) {
@@ -802,53 +1063,66 @@ function AddPage({ onAdd, blocked, profile }: { onAdd: (l: { kind: 'PS5' | 'PS4'
         });
         setAdded(true);
     };
-    if (blocked) return <Group label="أضف إعلانك" heading="لازم تخلص اللي معاك الأول">
-        <Callout title="معاك جهاز مستأجر دلوقتي" tone="warning">مش ممكن تنزل إعلان لجهازك وانت معاك جهاز تاني. سجل إرجاع الجهاز اللي معاك من صفحة حسابك الأول، وبعدين تعالى أضف إعلانك.</Callout>
-        <Link className="file-button is-compact" data-variant="secondary" to="/profile">روح لحسابك</Link>
-    </Group>;
-    return <>
-        {added ? <Group label="تمام" heading="إعلانك اتنشر">
-            <Callout title="إعلانك بقى لايف على السيرفر" tone="note">كل مستخدم بيفتح التطبيق دلوقتي بيشوف إعلانك في القائمة وعلى الخريطة. أول ما حد يطلبه، الطلب هيظهرلك في صفحة حسابك.</Callout>
-            <Link className="file-button is-compact" data-variant="secondary" to="/">شوف الإعلانات</Link>
-        </Group> : <Group label="أضف إعلانك" heading="أجر جهازك للناس">
-            <Paragraph>الإعلان هينزل باسمك ورقمك من حسابك: {profile.name} · <bdi>{profile.phone}</bdi></Paragraph>
-            <ChoiceRow label="الجهاز" options={[{ value: 'PS5', label: 'PS5' }, { value: 'PS4', label: 'PS4' }, { value: 'Xbox', label: 'Xbox' }]} value={kind} onChange={(v: string) => { const k = v as 'PS5' | 'PS4' | 'Xbox'; setKind(k); setModel(KIND_DEFAULT_MODEL[k]); setPhotoKey(KIND_PHOTO[k]); }} />
-            <ChoiceRow label="الموديل" options={modelOptions} value={model} onChange={(v: string) => setModel(v)} />
-            <ChoiceRow label="المساحة" options={[{ value: '500GB', label: '500 جيجا' }, { value: '825GB', label: '825 جيجا' }, { value: '1TB', label: '1 تيرا' }, { value: '2TB', label: '2 تيرا' }]} value={storage} onChange={(v: string) => setStorage(v)} />
-            <Slider label="عدد الدراعات" min={1} max={4} value={controllers} onChange={(v: number) => setControllers(v)} describe={(v: number) => v === 1 ? 'دراع واحد' : v === 2 ? 'دراعين' : `${v} دراعات`} />
-            <div className="nexus-idphoto">
-                <span className="nexus-idphoto-label">صورة الجهاز (صوره بموبايلك)</span>
-                <label className="nexus-idphoto-drop">
-                    {photoData ? 'غيّر صورة الجهاز' : 'ارفع صورة جهازك'}
-                    <input type="file" accept="image/*" onChange={pickPhoto} aria-label="ارفع صورة الجهاز" style={{ display: 'none' }} />
-                </label>
-                {photoData ? <img className="nexus-idphoto-preview" src={photoData} alt="صورة الجهاز اللي رفعتها" /> : null}
+    const topbar = <div className="nd-topbar"><Link className="nd-back" to="/" aria-label="رجوع للإعلانات"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7"/></svg></Link><b>أضف جهازك</b><span style={{ width: 38 }} /></div>;
+    if (blocked) return <div className="nd-page">{topbar}
+        <div className="nd-card" style={{ margin: '18px 22px' }}>
+            <b style={{ fontSize: 14.5 }}>لازم تخلص اللي معاك الأول</b>
+            <div className="nd-note" style={{ margin: '6px 0 10px' }}>معاك جهاز مستأجر دلوقتي، ومش ممكن تنزل إعلان لجهازك وانت معاك جهاز تاني. سجل إرجاع الجهاز اللي معاك من صفحة حسابك الأول، وبعدين تعالى أضف إعلانك.</div>
+            <Link className="nd-btn2" style={{ display: 'block', textAlign: 'center', textDecoration: 'none', padding: 11 }} to="/profile">روح لحسابك</Link>
+        </div>
+    </div>;
+    if (added) return <div className="nd-page">{topbar}
+        <div style={{ padding: '60px 22px 0', textAlign: 'center' }}>
+            <div className="nd-logo" style={{ margin: '0 auto' }}>✓</div>
+            <div style={{ fontSize: 20, fontWeight: 800, marginTop: 16 }}>إعلانك اتنشر</div>
+            <div className="nd-note" style={{ marginTop: 8 }}>إعلانك بقى لايف على السيرفر: كل مستخدم بيفتح التطبيق دلوقتي بيشوفه في القائمة وعلى الخريطة. أول ما حد يطلبه، الطلب هيظهرلك في صفحة حسابك.</div>
+            <Link className="nd-btn" style={{ display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 22 }} to="/">شوف الإعلانات</Link>
+        </div>
+    </div>;
+    const controllersLabel = controllers === 1 ? 'دراع واحد' : controllers === 2 ? 'دراعين' : `${controllers} دراعات`;
+    const priceNum = parseInt(price, 10);
+    return <div className="nd-page" style={{ paddingBottom: 130 }}>
+        {topbar}
+        <div style={{ padding: '4px 22px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div className="nd-note" style={{ textAlign: 'center' }}>الإعلان هينزل باسمك ورقمك من حسابك: {profile.name} · <bdi>{profile.phone}</bdi></div>
+            <label className="nd-up" style={{ height: 92 }}>
+                {photoData
+                    ? <img src={photoData} style={{ maxHeight: 64, borderRadius: 10 }} alt="صورة الجهاز اللي رفعتها" />
+                    : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>}
+                <span>{photoData ? 'غيّر صورة الجهاز' : 'صور الجهاز (إجباري)'}</span>
+                <input type="file" accept="image/*" onChange={pickPhoto} aria-label="ارفع صورة الجهاز" style={{ display: 'none' }} />
+            </label>
+            {!photoData && <div className="nd-seg">{[{ v: KIND_PHOTO[kind], l: 'صورة الجهاز' }, { v: KIND_PAD_PHOTO[kind], l: 'صورة دراع' }].map(o => <button key={o.v} type="button" className={photoKey === o.v ? 'on' : ''} onClick={() => setPhotoKey(o.v)}>{o.l}</button>)}</div>}
+            <div className="nd-seg">{(['PS5', 'PS4', 'Xbox'] as const).map(k => <button key={k} type="button" className={kind === k ? 'on' : ''} onClick={() => { setKind(k); setModel(KIND_DEFAULT_MODEL[k]); setPhotoKey(KIND_PHOTO[k]); }}>{k}</button>)}</div>
+            <div className="nd-seg">{modelOptions.map(m => <button key={m.value} type="button" className={model === m.value ? 'on' : ''} onClick={() => setModel(m.value)}>{m.label}</button>)}</div>
+            <div className="nd-seg">{[{ value: '500GB', label: '500 جيجا' }, { value: '825GB', label: '825 جيجا' }, { value: '1TB', label: '1 تيرا' }, { value: '2TB', label: '2 تيرا' }].map(o => <button key={o.value} type="button" className={storage === o.value ? 'on' : ''} onClick={() => setStorage(o.value)}>{o.label}</button>)}</div>
+            <div className="nd-card" style={{ padding: '12px 14px' }}>
+                <div className="nd-row"><b style={{ fontSize: 13 }}>عدد الدراعات</b><span style={{ fontSize: 13, fontWeight: 800, color: 'var(--nd-acctext)' }}>{controllersLabel}</span></div>
+                <input type="range" className="nd-range" min={1} max={4} value={controllers} onChange={e => setControllers(parseInt(e.target.value))} aria-label="عدد الدراعات" style={{ marginTop: 8 }} />
             </div>
-            {!photoData && <ChoiceRow label="أو اختار صورة جاهزة" options={[{ value: KIND_PHOTO[kind], label: 'صورة الجهاز' }, { value: KIND_PAD_PHOTO[kind], label: 'صورة دراع' }]} value={[KIND_PHOTO[kind], KIND_PAD_PHOTO[kind]].includes(photoKey) ? photoKey : KIND_PHOTO[kind]} onChange={(v: string) => setPhotoKey(v)} />}
-            <Caption>صورة حقيقية للجهاز بتخلي إعلانك أوضح وبتزود ثقة الناس فيك.</Caption>
-            <TextField label="الألعاب اللي مع الجهاز (افصل بينها بفاصلة)" value={games} onChange={(v: string) => setGames(v)} />
-            <TextField label="إيه اللي بييجي مع الجهاز؟ (شاحن، كابلات...)" value={includes} onChange={(v: string) => setIncludes(v)} />
-            <ChoiceRow label="المنطقة" options={[{ value: 'زايد', label: 'الشيخ زايد' }, { value: 'أكتوبر', label: '6 أكتوبر' }]} value={area} onChange={(v: string) => setArea(v as 'زايد' | 'أكتوبر')} />
-            <TextField label="الحي أو الكمبوند" value={district} onChange={(v: string) => setDistrict(v)} />
-            <div className="nexus-idphoto">
-                <span className="nexus-idphoto-label">مكان الجهاز على الخريطة</span>
+            <div style={{ display: 'flex', gap: 10 }}>
+                <div className="nd-field" style={{ flex: 1 }}><label>السعر / اليوم</label><input inputMode="numeric" value={price} onChange={e => setPrice(e.target.value)} placeholder="٨٠ ج.م" aria-label="سعر اليوم بالجنيه" /></div>
+                <div className="nd-field" style={{ flex: 1 }}><label>التأمين المسترد</label><input inputMode="numeric" value={deposit} onChange={e => setDeposit(e.target.value)} placeholder="٥٠٠ ج.م" aria-label="التأمين بالجنيه" /></div>
+            </div>
+            {Number.isFinite(priceNum) && priceNum > 0 && <div className="nd-note">عمولة التطبيق 20٪؜ من سعر الإيجار بس: {Math.round(priceNum * COMMISSION)} ج.م عن كل يوم، وصافيلك {priceNum - Math.round(priceNum * COMMISSION)} ج.م في اليوم. التأمين كله بيرجع للمستأجر.</div>}
+            <div className="nd-seg">{(['زايد', 'أكتوبر'] as const).map(a => <button key={a} type="button" className={area === a ? 'on' : ''} onClick={() => setArea(a)}>{a}</button>)}</div>
+            <div className="nd-field"><label>الحي</label><input value={district} onChange={e => setDistrict(e.target.value)} placeholder="الحصري" aria-label="الحي أو الكمبوند" /></div>
+            <div className="nd-field"><label>الألعاب المشمولة</label><input value={games} onChange={e => setGames(e.target.value)} placeholder="FC 25 + سبايدرمان ٢" aria-label="الألعاب اللي مع الجهاز" /></div>
+            <div className="nd-field"><label>إيه اللي بييجي مع الجهاز؟</label><input value={includes} onChange={e => setIncludes(e.target.value)} placeholder="شاحن، كابلات..." aria-label="اللي بييجي مع الجهاز" /></div>
+            <div className="nd-card" style={{ padding: 10 }}>
                 <LocationPicker area={area} value={loc} onChange={(v: LatLng) => { setLoc(v); setLocNote(''); }} />
-                <div className="nexus-card-actions">
-                    <FileButton variant="secondary" compact pill onClick={useMyLocation} disabled={locating}>{locating ? 'بنحدد مكانك...' : 'استخدم مكاني الحالي'}</FileButton>
-                </div>
+                <button type="button" className="nd-btn2" style={{ width: '100%', marginTop: 10, padding: 11 }} onClick={useMyLocation} disabled={locating}>{locating ? 'بنحدد مكانك...' : 'حدد مكان الجهاز على الخريطة'}</button>
             </div>
-            {locNote && <Caption>{locNote}</Caption>}
-            {loc && <Caption>المكان اتحفظ. تقدر تحرك الدبوس بيدك لو عايز تظبطه.</Caption>}
-            <Callout title="مكانك الدقيق في أمان" tone="note">اللي بيتصفح التطبيق بيشوف دايرة تقريبية بقطر ٣٥٠ متر حوالين المكان الحقيقي. المكان الدقيق بيتخزن لوحده على السيرفر، وقواعد السيرفر نفسها بتمنع حد غيرك (وغير المندوب وقت الاستلام) يقراه.</Callout>
-            <TextField label="سعر اليوم بالجنيه (اكتب الرقم)" value={price} onChange={(v: string) => setPrice(v)} />
-            <Callout title="عمولة التطبيق 20 في المية" tone="note">التطبيق بياخد عمولة 20 في المية من سعر الإيجار بس، مش من التأمين. التأمين كله بيرجع للمستأجر.</Callout>
-            {(() => { const pv = parseInt(price, 10); if (!Number.isFinite(pv) || pv <= 0) return null; const fee = Math.round(pv * COMMISSION); return <Callout title="احسبها على السعر اللي كتبته" tone="note">لو اليوم بـ {pv} ج.م: عمولة التطبيق {fee} ج.م عن كل يوم، وصافيلك {pv - fee} ج.م في اليوم. يعني لو اتأجر 3 أيام، صافيك {3 * (pv - fee)} ج.م من أصل {3 * pv} ج.م.</Callout>; })()}
-            <TextField label="التأمين بالجنيه بيرجع (اكتب الرقم، أو سيبه فاضي)" value={deposit} onChange={(v: string) => setDeposit(v)} />
-            <Callout title="جهازك فيه تتبع ضد السرقة" tone="note">مندوب المنصة بيركب AirTag في الجهاز وهو واصل للمستأجر وبيشيله عند الإرجاع، والمستأجر بيشوف ده ويوافق عليه قبل ما يأكد الطلب، وتقدر تتبع مكان جهازك طول ما هو بره.</Callout>
-            {error && <Callout title="راجع البيانات" tone="danger">{error}</Callout>}
-            <FileButton variant="primary" pill onClick={submit}>انشر الإعلان</FileButton>
-        </Group>}
-    </>;
+            {locNote && <div className="nd-note">{locNote}</div>}
+            {loc && !locNote && <div className="nd-note">المكان اتحفظ. تقدر تحرك الدبوس بيدك لو عايز تظبطه.</div>}
+            <div className="nd-note" style={{ textAlign: 'center' }}>مكانك الدقيق مش بيظهر لحد، اللي يحجز بيشوف منطقة تقريبية بس</div>
+            <div className="nd-note">جهازك فيه تتبع ضد السرقة: مندوب المنصة بيركب AirTag في الجهاز وهو واصل للمستأجر وبيشيله عند الإرجاع، والمستأجر بيوافق على ده قبل ما يأكد الطلب.</div>
+            {error && <div className="nd-note" style={{ color: '#ff6b6b', fontWeight: 700 }}>{error}</div>}
+        </div>
+        <div className="nd-bottombar">
+            <button type="button" className="nd-btn" onClick={submit}>انشر الجهاز</button>
+        </div>
+    </div>;
 }
 
 function useNow(stepMs: number) {
@@ -868,65 +1142,70 @@ function CountdownRing({ frac, label, sub }: { frac: number; label: string; sub:
                     <stop offset="100%" stopColor="#FF7EE3" />
                 </linearGradient>
             </defs>
-            <circle cx="80" cy="80" r={R} fill="none" stroke="#1a1545" strokeWidth="10" />
+            <circle cx="80" cy="80" r={R} fill="none" stroke="var(--nd-card)" strokeWidth="10" />
             <circle cx="80" cy="80" r={R} fill="none" stroke="url(#nexusGrad)" strokeWidth="10" strokeLinecap="round"
                 strokeDasharray={C} strokeDashoffset={C * (1 - frac)} transform="rotate(-90 80 80)" />
         </svg>
-        <div className="nexus-ring-text"><span className="nexus-ring-label">{label}</span><span className="nexus-ring-sub">{sub}</span></div>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}><span style={{ fontSize: 17, fontWeight: 800 }}>{label}</span><span className="nd-note" style={{ fontSize: 11.5 }}>{sub}</span></div>
     </div>;
 }
 
 function OrderPage({ order, onHandoverCheck, onChat }: { order: OrderDoc | null; onHandoverCheck: (v: CondState) => void; onChat: (name: string, suggestions?: string[], channelId?: string) => void }) {
-    if (!order) return <Group label="تتبع طلبك" heading="مفيش طلب شغال دلوقتي">
-        <Callout title="لما تطلب جهاز هتلاقي التتبع هنا" tone="note">اطلب جهاز من الإعلانات، وأول ما المالك يقبل طلبك هتقدر تتابع المندوب خطوة بخطوة من الصفحة دي، لايف.</Callout>
-        <Link className="file-button is-compact" data-variant="secondary" to="/">شوف الإعلانات</Link>
-    </Group>;
-    if (order.status === 'requested') return <Group label="تتبع طلبك" heading={order.title}>
-        <Callout title="طلبك عند المالك دلوقتي" tone="note">استنى رده: لو قال متاح، المندوب هيتحرك وهتلاقي الخطوات بتتحدث هنا لايف. لو رفض، الطلب هيشيل نفسه وتقدر تطلب جهاز تاني.</Callout>
-        <Facts items={[
-            { label: 'المالك', value: order.ownerName },
-            { label: 'المدة', value: yom(order.days) },
-            { label: 'المطلوب عند الاستلام', value: `${order.rent + order.deposit + (order.deliveryFee || 0) - (order.discount || 0)} ج.م` },
-        ]} />
-    </Group>;
+    const topbar = (t: string) => <div className="nd-topbar"><Link className="nd-back" to="/orders" aria-label="رجوع لطلباتك"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7"/></svg></Link><b>{t}</b><span style={{ width: 38 }} /></div>;
+    if (!order) return <div className="nd-page">{topbar('تتبع طلبك')}
+        <div className="nd-card" style={{ margin: '18px 22px' }}><b style={{ fontSize: 14.5 }}>مفيش طلب شغال دلوقتي</b><div className="nd-note" style={{ margin: '6px 0 10px' }}>اطلب جهاز من الإعلانات، وأول ما المالك يقبل هتتابع المندوب خطوة بخطوة هنا، لايف.</div><Link className="nd-linklike" to="/">شوف الإعلانات</Link></div>
+    </div>;
+    if (order.status === 'requested') return <div className="nd-page">{topbar('تتبع طلبك')}
+        <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="nd-card"><b style={{ fontSize: 15 }}>{order.title}</b><div className="nd-note" style={{ marginTop: 6 }}>طلبك عند المالك دلوقتي. لو قال متاح، المندوب هيتحرك وهتلاقي الخطوات بتتحدث هنا لايف. لو رفض، تقدر تطلب جهاز تاني.</div></div>
+            <div className="nd-card" style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                <div className="nd-row"><span className="nd-note" style={{ fontSize: 12.5 }}>المالك</span><b style={{ fontSize: 13 }}>{order.ownerName}</b></div>
+                <div className="nd-row"><span className="nd-note" style={{ fontSize: 12.5 }}>المدة</span><b style={{ fontSize: 13 }}>{yom(order.days)}</b></div>
+                <div className="nd-row"><span className="nd-note" style={{ fontSize: 12.5 }}>المطلوب عند الاستلام</span><b style={{ fontSize: 13, color: 'var(--nd-acctext)' }}>{order.rent + order.deposit + (order.deliveryFee || 0) - (order.discount || 0)} ج.م</b></div>
+            </div>
+        </div>
+    </div>;
     const stage = STAGE_OF[order.status] ?? 0;
     const arrived = order.status === 'arrived' || order.status === 'delivered';
     const widths = [12, 40, 70, 100];
     const check = order.handoverCheck || EMPTY_COND;
-    return <>
-        <Group label="تتبع طلبك" heading={order.title}>
-            <Paragraph>{order.ownerName} · {yom(order.days)} · المطلوب عند الاستلام {order.rent + order.deposit + (order.deliveryFee || 0) - (order.discount || 0)} ج.م{!order.payMethod || order.payMethod === 'كاش عند الاستلام' ? ' كاش' : ` (${order.payMethod})`}</Paragraph>
-            <div className="nexus-progress" role="img" aria-label={`طلبك في خطوة ${stage + 1} من ${ORDER_STEPS.length}`}><div style={{ width: `${widths[stage]}%` }} /></div>
-            <div className="nexus-steps">
-                {ORDER_STEPS.map((s, i) => <div key={i} className={`nexus-step${i < stage ? ' is-done' : ''}${i === stage ? ' is-now' : ''}`}>
-                    <span className="nexus-step-dot">{i < stage ? '✓' : i + 1}</span>
-                    <span className="nexus-step-text">{s}</span>
+    const headline: Record<string, string> = { accepted: 'مندوب بيستلم طلبك', taken: 'مندوب بيستلم طلبك', pickedup: 'المندوب في طريقه ليك', arrived: 'المندوب وصل، استلم جهازك', delivered: 'جهازك معاك — إيجارك شغال', returning: 'الإرجاع جاري' };
+    const stepState = (i: number) => i < stage ? 'done' : i === stage ? 'active' : 'todo';
+    const checkSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4 10-11"/></svg>;
+    return <div className="nd-page" style={{ paddingBottom: 40 }}>
+        {topbar('طلبك جاري')}
+        <div style={{ padding: '4px 22px 0', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="nd-card" style={{ background: 'var(--nd-herobg)' }}>
+                <span className="nd-chip2">{statusAr(order.status)}</span>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', marginTop: 8 }}>{headline[order.status] || statusAr(order.status)}</div>
+                <div className="nd-pbar" style={{ marginTop: 12, background: 'rgba(255,255,255,.18)' }}><i style={{ width: `${widths[stage]}%`, background: '#fff' }} /></div>
+                <div className="nd-note" style={{ marginTop: 10, color: 'rgba(255,255,255,.85)' }}>{order.ownerName} · {yom(order.days)} · المطلوب عند الاستلام {order.rent + order.deposit + (order.deliveryFee || 0) - (order.discount || 0)} ج.م{!order.payMethod || order.payMethod === 'كاش عند الاستلام' ? ' كاش' : ` (${order.payMethod})`}</div>
+            </div>
+            <div className="nd-card">
+                {ORDER_STEPS.map((s, i) => <div key={i} className={`nd-step ${stepState(i)}`}>
+                    <div className="nd-dot">{i < stage && checkSvg}</div>
+                    <div><b>{s}</b><span>{i < stage ? 'تمت' : i === stage ? 'دلوقتي' : 'متبقي'}</span></div>
                 </div>)}
             </div>
+            <div className="nd-note">الخطوات بتتحدث لايف: المندوب بيحدثها من لوحته وانت بتشوفها في نفس اللحظة.</div>
             {order.courierName
-                ? <div className="nexus-status-line"><span className="nexus-dot nexus-dot-pink" />مندوب استلم طلبك: {order.courierName} شغال عليه دلوقتي</div>
-                : <div className="nexus-status-line"><span className="nexus-dot nexus-dot-grey" />بنستنى مندوب يستلم طلبك</div>}
-            <Caption>الخطوات بتتحدث لايف: المندوب بيحدثها من لوحته وانت بتشوفها في نفس اللحظة.</Caption>
+                ? <div className="nd-card nd-row">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><div className="nd-av">{order.courierName.trim().charAt(0)}</div><div><b style={{ fontSize: 14 }}>{order.courierName}</b><div className="nd-note">مندوب نيكسوس</div></div></div>
+                    <button type="button" className="nd-btn2" style={{ width: 44, height: 44, borderRadius: 14, padding: 0, flex: 'none' }} onClick={() => onChat(order.courierName as string, COURIER_CHAT_SUGGESTIONS, orderChannelId(order.id))} aria-label={`كلم ${order.courierName}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20"><path d="M4 4h16v12H9l-5 4z"/></svg></button>
+                </div>
+                : <div className="nd-card"><div className="nd-note">بنستنى مندوب يستلم طلبك. أول ما مندوب يستلمه هيتاح الشات معاه هنا.</div></div>}
             {arrived && <>
-                <Callout title="المندوب وصل" tone="note">استلم جهازك وراجعه كويس قدام المندوب. علم على التشيك ليست وصوّر الجهاز: دي إثبات حالتك. زرار تأكيد التسليم مع المندوب في لوحته هو، وأول ما يدوسه العداد بتاعك بيبدأ.</Callout>
-                <h3 className="nexus-subhead">تشيك ليست حالة الجهاز عند الاستلام</h3>
-                <ConditionChecklist value={check} onChange={onHandoverCheck} />
-                {!condComplete(check)
-                    ? <Caption>علم على كل نقاط التشيك ليست وضيف صورة واحدة على الأقل للجهاز، وبعدها المندوب يأكد التسليم من لوحته. التشيك ليست بتوصل للمندوب لحظة بلحظة.</Caption>
-                    : <Caption>التشيك ليست كاملة. المندوب دلوقتي يقدر يأكد التسليم من لوحته.</Caption>}
+                <div className="nd-card">
+                    <b style={{ fontSize: 13.5, display: 'block', marginBottom: 10 }}>فحص الاستلام</b>
+                    <div className="nd-note" style={{ marginBottom: 10 }}>استلم جهازك وراجعه كويس قدام المندوب. علم على التشيك ليست وصوّر الجهاز: دي إثبات حالتك. زرار تأكيد التسليم مع المندوب في لوحته، وأول ما يدوسه العداد بتاعك بيبدأ.</div>
+                    <ConditionChecklist value={check} onChange={onHandoverCheck} />
+                    {!condComplete(check)
+                        ? <div className="nd-note" style={{ marginTop: 10 }}>علم على كل نقاط التشيك ليست وضيف صورة واحدة على الأقل للجهاز، وبعدها المندوب يأكد التسليم من لوحته.</div>
+                        : <div className="nd-note" style={{ marginTop: 10 }}>التشيك ليست كاملة. المندوب دلوقتي يقدر يأكد التسليم من لوحته.</div>}
+                </div>
             </>}
-        </Group>
-        {order.courierName && <Group label="المندوب معاك طول الطريق" heading={order.courierName}>
-            <Facts items={[
-                { label: 'الاسم', value: order.courierName },
-                { label: 'الحالة', value: statusAr(order.status) },
-            ]} />
-            <div className="nexus-card-actions">
-                <FileButton variant="secondary" compact pill onClick={() => onChat(order.courierName as string, COURIER_CHAT_SUGGESTIONS, orderChannelId(order.id))}>ابعتله رسالة</FileButton>
-            </div>
-            <Caption>الشات مع المندوب حقيقي على السيرفر، بيوصله في نفس اللحظة.</Caption>
-        </Group>}
-    </>;
+        </div>
+    </div>;
 }
 
 function ActiveRental({ rental, onReturn, returnCheck, onReturnCheck, onChat }: { rental: Rental; onReturn: () => void; returnCheck: CondState; onReturnCheck: (v: CondState) => void; onChat: (name: string, suggestions?: string[], channelId?: string) => void }) {
@@ -941,30 +1220,38 @@ function ActiveRental({ rental, onReturn, returnCheck, onReturnCheck, onChat }: 
     const refund = Math.max(0, (rental.days - usedDays) * rental.pricePerDay);
     const frac = Math.max(0, Math.min(1, remainMs / (rental.days * 86400000)));
     const remainLabel = remDays > 0 ? `${yom(remDays)} و${remHours} ساعة` : `${remHours} ساعة و${remMins} دقيقة`;
-    return <Group label="إيجارك الحالي" heading={rental.title}>
-        {rental.returned ? <>
-            <Callout title="طلب الإرجاع اتسجل" tone="note">المندوب جاي يستلم الجهاز منك، بيتشيك عليه وبيشيل الـ AirTag قدامك ويرجعه للمالك. لو رجعت بدري المفروض يرجعلك حوالي {refund} ج.م فرق الأيام الباقية، والتأمين المحجوز بيرجع كامل بعد المعاينة.</Callout>
-        </> : <>
-            <CountdownRing frac={frac} label={remainLabel} sub="فاضل على الإرجاع" />
-            <Facts items={[
-                { label: 'المالك', value: rental.owner },
-                ...(rental.ownerPhone ? [{ label: 'موبايل المالك', value: rental.ownerPhone }] : []),
-                { label: 'المدة', value: yom(rental.days) },
-                { label: 'التتبع', value: 'وافقت على جهاز التتبع ضد السرقة' },
-            ]} />
-            <div className="nexus-card-actions">
-                {rental.ownerPhone ? <a className="file-button is-compact" data-variant="primary" href={`tel:${rental.ownerPhone}`}>اتصل بالمالك</a> : null}
-                <FileButton variant="secondary" compact pill onClick={() => onChat(rental.owner, OWNER_CHAT_SUGGESTIONS, rental.channelId)}>كلم {rental.owner}</FileButton>
+    return <>
+        <div className="nd-card">
+            <b style={{ fontSize: 15 }}>إيجارك الحالي · {rental.title}</b>
+            {rental.returned
+                ? <div className="nd-note" style={{ marginTop: 8 }}>طلب الإرجاع اتسجل. المندوب جاي يستلم الجهاز منك، بيتشيك عليه وبيشيل الـ AirTag قدامك ويرجعه للمالك. لو رجعت بدري المفروض يرجعلك حوالي {refund} ج.م فرق الأيام الباقية، والتأمين المحجوز بيرجع كامل بعد المعاينة.</div>
+                : <>
+                    <CountdownRing frac={frac} label={remainLabel} sub="فاضل على الإرجاع" />
+                    <div className="nd-row" style={{ padding: '6px 0' }}><span className="nd-note" style={{ fontSize: 12.5 }}>المالك</span><b style={{ fontSize: 13 }}>{rental.owner}</b></div>
+                    {rental.ownerPhone ? <div className="nd-row" style={{ padding: '6px 0' }}><span className="nd-note" style={{ fontSize: 12.5 }}>موبايل المالك</span><b style={{ fontSize: 13 }}><bdi>{rental.ownerPhone}</bdi></b></div> : null}
+                    <div className="nd-row" style={{ padding: '6px 0' }}><span className="nd-note" style={{ fontSize: 12.5 }}>المدة</span><b style={{ fontSize: 13 }}>{yom(rental.days)}</b></div>
+                    <div className="nd-row" style={{ padding: '6px 0' }}><span className="nd-note" style={{ fontSize: 12.5 }}>التتبع</span><b style={{ fontSize: 13 }}>وافقت على جهاز التتبع ضد السرقة</b></div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                        {rental.ownerPhone ? <a className="nd-btn" style={{ flex: 1, padding: 11, textAlign: 'center', textDecoration: 'none' }} href={`tel:${rental.ownerPhone}`}>اتصل بالمالك</a> : null}
+                        <button type="button" className="nd-btn2" style={{ flex: 1, padding: 11 }} onClick={() => onChat(rental.owner, OWNER_CHAT_SUGGESTIONS, rental.channelId)}>كلم {rental.owner}</button>
+                    </div>
+                    <div className="nd-note" style={{ marginTop: 10 }}>لو الجهاز محتاج باسورد عشان يتفتح، أو عايز تستأذن تضيف الأكونت بتاعك، كلم المالك من هنا.</div>
+                </>}
+        </div>
+        {!rental.returned && <>
+            <div className="nd-card">
+                <b style={{ fontSize: 13.5 }}>لو رجعته بدري</b>
+                <div className="nd-note" style={{ marginTop: 6 }}>لو سلمته دلوقتي بيرجعلك حوالي {refund} ج.م فرق الأيام الباقية، والتأمين المحجوز عند المنصة بيرجع لك كامل بعد المعاينة. مندوب المنصة بييجي يستلم الجهاز منك، بيتشيك عليه وبيشيل الـ AirTag قدامك ويرجعه للمالك.</div>
             </div>
-            <Caption>لو الجهاز محتاج باسورد عشان يتفتح، أو عايز تستأذن تضيف الأكونت بتاعك، كلم المالك من هنا.</Caption>
-            <Callout title="لو رجعته بدري" tone="warning">لو سلمته دلوقتي بيرجعلك حوالي {refund} ج.م فرق الأيام الباقية، والتأمين المحجوز عند المنصة بيرجع لك كامل بعد المعاينة. مندوب المنصة بييجي يستلم الجهاز منك، بيتشيك عليه وبيشيل الـ AirTag قدامك ويرجعه للمالك.</Callout>
-            <h3 className="nexus-subhead">تشيك ليست حالة الجهاز عند الإرجاع</h3>
-            <ConditionChecklist value={returnCheck} onChange={onReturnCheck} />
-            <FileButton variant="secondary" compact pill disabled={!condComplete(returnCheck)} onClick={() => { if (condComplete(returnCheck)) onReturn(); }}>سجل الإرجاع واطلب المندوب</FileButton>
-            {!condComplete(returnCheck) && <Caption>كمّل تشيك ليست الإرجاع وضيف صورة واحدة على الأقل عشان تسجل الإرجاع. المندوب بيشوفها لحظة بلحظة.</Caption>}
+            <div className="nd-card">
+                <b style={{ fontSize: 13.5, display: 'block', marginBottom: 6 }}>تشيك ليست حالة الجهاز عند الإرجاع</b>
+                <ConditionChecklist value={returnCheck} onChange={onReturnCheck} />
+                <button type="button" className="nd-btn" style={{ width: '100%', marginTop: 12 }} disabled={!condComplete(returnCheck)} onClick={() => { if (condComplete(returnCheck)) onReturn(); }}>سجل الإرجاع واطلب المندوب</button>
+                {!condComplete(returnCheck) && <div className="nd-note" style={{ marginTop: 8 }}>كمّل تشيك ليست الإرجاع وضيف صورة واحدة على الأقل عشان تسجل الإرجاع. المندوب بيشوفها لحظة بلحظة.</div>}
+            </div>
         </>}
-        <Caption>العداد بيعد لحظة بلحظة من لحظة الاستلام.</Caption>
-    </Group>;
+        <div className="nd-note">العداد بيعد لحظة بلحظة من لحظة الاستلام.</div>
+    </>;
 }
 
 function UserAvatar({ profile, size }: { profile: UserProfile | null; size?: number }) {
@@ -972,7 +1259,7 @@ function UserAvatar({ profile, size }: { profile: UserProfile | null; size?: num
     return <Avatar char={profile?.avatar || '🎮'} size={size} />;
 }
 
-function ProfileForm({ initial, submitLabel, onSave }: { initial: UserProfile | null; submitLabel: string; onSave: (p: UserProfile) => void }) {
+function ProfileForm({ initial, submitLabel, onSave, onBack }: { initial: UserProfile | null; submitLabel: string; onSave: (p: UserProfile) => void; onBack?: () => void }) {
     const [name, setName] = useState(initial?.name || '');
     const [age, setAge] = useState(initial?.age || '');
     const [phone, setPhone] = useState(initial?.phone || '');
@@ -1001,48 +1288,61 @@ function ProfileForm({ initial, submitLabel, onSave }: { initial: UserProfile | 
         if (name.trim().length < 2) { setError('اكتب اسمك الأول.'); return; }
         if (!Number.isFinite(a) || a < 10 || a > 100) { setError('اكتب سنك بالأرقام.'); return; }
         if (phone.replace(/\D/g, '').length < 10) { setError('اكتب رقم موبايل صحيح من 11 رقم.'); return; }
-        if (address.trim().length < 3) { setError('اكتب عنوانك (المنطقة والحي).' ); return; }
+        if (address.trim().length < 3) { setError('اكتب عنوانك (المنطقة والحي).'); return; }
         if (!photo) { setError('ضيف صورتك الشخصية الأول، مطلوبة للأمان.'); return; }
         if (!idPhoto || !idPhotoBack) { setError('ضيف صورة البطاقة وش وضهر، الاتنين مطلوبين للأمان.'); return; }
         setError('');
         onSave({ name: name.trim(), age: String(a), phone: phone.trim(), avatar: initial?.avatar || AVATARS[0], address: address.trim(), photo, idPhoto, idPhotoBack });
     };
-    return <>
-        <div className="nexus-idphoto">
-            <span className="nexus-idphoto-label">صورتك الشخصية (سيلفي واضح)</span>
-            <label className="nexus-idphoto-drop">
-              {photo ? "غيّر صورتك" : "ارفع صورتك من موبايلك"}
-              <input type="file" accept="image/*" onChange={pickProfilePhoto} aria-label="ارفع صورتك الشخصية" style={{ display: "none" }} />
+    const camSvg = <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="7" width="18" height="13" rx="3"/><circle cx="12" cy="13" r="3.5"/><path d="M8.5 7 10 4.5h4L15.5 7"/></svg>;
+    return <div className="nd-page">
+        <div className="nd-topbar">
+            {onBack && <button type="button" className="nd-back" onClick={onBack} aria-label="رجوع"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>}
+            <b>{initial ? 'تعديل البروفايل' : 'حساب جديد'}</b>
+            <div style={{ flex: 1 }} />
+        </div>
+        <div style={{ textAlign: 'center', marginTop: 22 }}>
+            <label style={{ cursor: 'pointer', display: 'inline-block' }} aria-label="ارفع صورتك الشخصية">
+                <input type="file" accept="image/*" onChange={pickProfilePhoto} style={{ display: 'none' }} />
+                {photo
+                    ? <span style={{ width: 88, height: 88, borderRadius: '50%', margin: '0 auto', display: 'block', overflow: 'hidden', boxShadow: '0 0 18px var(--nd-accglow)' }}><img src={photo} alt="صورتك الشخصية" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /></span>
+                    : <span style={{ width: 88, height: 88, borderRadius: '50%', border: '2px dashed var(--nd-navmut)', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--nd-mut)' }}>{camSvg}</span>}
             </label>
-            {photo ? <img className="nexus-avatar nexus-avatar-photo nexus-avatar-lg" src={photo} alt="صورتك الشخصية" /> : null}
+            <div className="nd-note" style={{ marginTop: 8 }}>صورتك الشخصية (مطلوبة)</div>
         </div>
-        <Caption>صورتك مطلوبة عشان الإدارة تقارنها بصورة البطاقة وتتأكد إنك صاحب الحساب فعلًا. مبتظهرش لأي مستخدم تاني.</Caption>
-        <TextField label="اسمك" value={name} onChange={(v: string) => setName(v)} />
-        <TextField label="سنك" value={age} onChange={(v: string) => setAge(v)} />
-        <TextField label="رقم موبايلك" value={phone} onChange={(v: string) => setPhone(v)} />
-        <TextField label="عنوانك (المنطقة والحي)" value={address} onChange={(v: string) => setAddress(v)} />
-        <div className="nexus-idphoto">
-            <span className="nexus-idphoto-label">صورة البطاقة وش وضهر (إثبات شخصية)</span>
-            <div className="nexus-idpair">
-              <label className="nexus-idphoto-drop">
-                {idPhoto ? "غيّر صورة الوش" : "ارفع صورة الوش"}
-                <input type="file" accept="image/*" onChange={pickIdPhoto} aria-label="ارفع صورة وش البطاقة" style={{ display: "none" }} />
-              </label>
-              <label className="nexus-idphoto-drop">
-                {idPhotoBack ? "غيّر صورة الضهر" : "ارفع صورة الضهر"}
-                <input type="file" accept="image/*" onChange={pickIdPhotoBack} aria-label="ارفع صورة ضهر البطاقة" style={{ display: "none" }} />
-              </label>
+        <div className="nd-pad" style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 11, paddingBottom: 120 }}>
+            <div className="nd-field"><label>الاسم بالكامل</label><input value={name} onChange={e => setName(e.target.value)} placeholder="اسمك" aria-label="الاسم بالكامل" /></div>
+            <div className="nd-row" style={{ gap: 11 }}>
+                <div className="nd-field" style={{ flex: 1 }}><label>السن</label><input inputMode="numeric" value={age} onChange={e => setAge(e.target.value)} placeholder="٢٤" aria-label="السن" /></div>
+                <div className="nd-field" style={{ flex: 2 }}><label>رقم الموبايل</label><input dir="ltr" inputMode="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="01xxxxxxxxx" aria-label="رقم الموبايل" /></div>
             </div>
-            <div className="nexus-idpair">
-              {idPhoto ? <img className="nexus-idphoto-preview" src={idPhoto} alt="صورة وش البطاقة اللي رفعتها" /> : <span />}
-              {idPhotoBack ? <img className="nexus-idphoto-preview" src={idPhotoBack} alt="صورة ضهر البطاقة اللي رفعتها" /> : <span />}
+            <div className="nd-field"><label>العنوان بالتفصيل</label><input value={address} onChange={e => setAddress(e.target.value)} placeholder="الحي، المنطقة" aria-label="العنوان بالتفصيل" /></div>
+            <div>
+                <div style={{ fontSize: 12.5, color: 'var(--nd-mut)', marginBottom: 7 }}>البطاقة الشخصية (مطلوبة) — تأمين لأصحاب الأجهزة</div>
+                <div className="nd-row" style={{ gap: 11 }}>
+                    <label className={idPhoto ? 'nd-idbox has' : 'nd-idbox'}>
+                        <input type="file" accept="image/*" onChange={pickIdPhoto} aria-label="ارفع صورة وش البطاقة" style={{ display: 'none' }} />
+                        {idPhoto ? <img src={idPhoto} alt="صورة وش البطاقة" /> : camSvg}
+                        <div className="t">{idPhoto ? 'غيّر صورة الوش' : 'صورة الوش'}</div>
+                    </label>
+                    <label className={idPhotoBack ? 'nd-idbox has' : 'nd-idbox'}>
+                        <input type="file" accept="image/*" onChange={pickIdPhotoBack} aria-label="ارفع صورة ضهر البطاقة" style={{ display: 'none' }} />
+                        {idPhotoBack ? <img src={idPhotoBack} alt="صورة ضهر البطاقة" /> : camSvg}
+                        <div className="t">{idPhotoBack ? 'غيّر صورة الضهر' : 'صورة الضهر'}</div>
+                    </label>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: 'center', marginTop: 7, color: 'var(--nd-mut)', fontSize: 11.5 }}>
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 1 1 8 0v3"/></svg>
+                    <span>الإدارة بس اللي بتشوفها · متشفرة أثناء النقل والتخزين على سيرفرات جوجل</span>
+                </div>
             </div>
+            {error && <div className="nd-err">{error}</div>}
+            <div className="nd-note" style={{ textAlign: 'center' }}>صورتك بتطمن أصحاب الأجهزة إنك شخص حقيقي، ومبيشوفهاش ولا البطاقة أي مستخدم - إدارة التطبيق بس.</div>
         </div>
-        <Caption>صور البطاقة مطلوبة للأمان، ومبيشوفهاش أي مستخدم خالص - إدارة التطبيق بس اللي بتشوفها. بتتخزن على سيرفرات Firebase وجوجل بتشفرها أثناء النقل والتخزين.</Caption>
-        {error && <Callout title="راجع البيانات" tone="danger">{error}</Callout>}
-        <FileButton variant="primary" pill onClick={save}>{submitLabel}</FileButton>
-        <Caption>بياناتك بتتحفظ على سيرفر Firebase بأمان. صورتك وصورة بطاقتك مبيشوفهمش أي مستخدم، إدارة التطبيق بس.</Caption>
-    </>;
+        <div className="nd-bottombar">
+            <button type="button" className="nd-btn" onClick={save}>{submitLabel}</button>
+        </div>
+    </div>;
 }
 
 function ProfilePage({ profile, myUid, email, myOrders, incoming, myListings, orders, rentalOrder, chats, onEditProfile, onReturn, onReturnCheck, onCancelRequest, onDeleteListing, onChat, onTrack, onOwnerAnswer, onOpenChat, onSupport, onComplain, onSignOut }: {
@@ -1052,106 +1352,91 @@ function ProfilePage({ profile, myUid, email, myOrders, incoming, myListings, or
     onOwnerAnswer: (o: OrderDoc, ok: boolean) => void; onOpenChat: (c: ChatDoc) => void; onSupport: () => void; onComplain: () => void; onSignOut: () => void;
 }) {
     const doneCount = myOrders.filter(o => o.status === 'returned').length;
-    const openRequests = myOrders.filter(o => o.status === 'requested');
-    const declined = myOrders.filter(o => o.status === 'declined');
     const chatName = (c: ChatDoc) => myUid === c.ownerId ? (c.renterName || 'مستأجر') : (c.kind === 'order' ? (c.courierName || 'المندوب') : (c.ownerName || 'المالك'));
-    return <>
-        <Group label="حسابك" heading={`أهلًا ${profile.name}`}>
-            <div className="nexus-me">
-                <UserAvatar profile={profile} size={56} />
-                <div className="nexus-me-info">
-                    <div className="nexus-card-title">{profile.name}</div>
-                    <div className="nexus-muted">{profile.age} سنة · <bdi>{profile.phone}</bdi></div>
-                    <div className="nexus-muted">{profile.address}</div>
-                    <div className="nexus-muted"><bdi>{email}</bdi></div>
-                </div>
-                <FileButton variant="secondary" compact pill onClick={onEditProfile}>عدل بياناتك</FileButton>
-            </div>
-            <Facts items={[
-                { label: 'إيجاراتك المكتملة', value: `${doneCount}` },
-                { label: 'مستواك', value: 'برونزي' },
-                { label: 'الباقي على فضي', value: `${Math.max(0, 5 - doneCount)} إيجارات` },
-            ]} />
-            <div className="nexus-progress" role="img" aria-label="تقدمك ناحية المستوى الفضي"><div style={{ width: `${Math.min(100, (doneCount / 5) * 100)}%` }} /></div>
-        </Group>
-        {rentalOrder && <ActiveRental
-            rental={{ title: rentalOrder.title, owner: rentalOrder.ownerName, ownerPhone: rentalOrder.ownerPhone || '', pricePerDay: rentalOrder.pricePerDay, days: rentalOrder.days, startMs: rentalOrder.deliveredAt || rentalOrder.createdMs, returned: rentalOrder.status === 'returning', channelId: rentalOrder.deviceId ? dmChannelId(rentalOrder.deviceId, myUid) : undefined }}
-            onReturn={onReturn} returnCheck={rentalOrder.returnCheck || EMPTY_COND} onReturnCheck={onReturnCheck} onChat={onChat} />}
-        {declined.length > 0 && <Group label="طلبات اترفضت" heading>
-            {declined.map(o => <div key={o.id} className="nexus-card"><div className="nexus-card-body">
-                <div className="nexus-card-title">{o.title}</div>
-                <div className="nexus-muted">{o.ownerName} اعتذر عن الطلب ده. جهاز تاني؟</div>
-                <div className="nexus-card-actions">
-                    <Link className="file-button is-compact" data-variant="secondary" to="/">شوف الإعلانات</Link>
-                    <FileButton variant="ghost" compact onClick={() => onCancelRequest(o.id)}>امسح الطلب</FileButton>
-                </div>
-            </div></div>)}
-        </Group>}
-        {openRequests.length > 0 && <Group label="طلباتك المفتوحة" heading>
-            {openRequests.map(r => <div key={r.id} className="nexus-card">
-                <div className="nexus-card-body">
-                    <div className="nexus-card-title">{r.title}</div>
-                    <div className="nexus-muted">{r.ownerName} · {yom(r.days)} · إيجار <bdi>{r.rent}</bdi> ج.م وتأمين <bdi>{r.deposit}</bdi> ج.م</div>
-                    <div className="nexus-status-line"><span className="nexus-dot nexus-dot-grey" />{statusAr(r.status)}</div>
-                    <div className="nexus-card-actions">
-                        <Link className="file-button is-compact" data-variant="primary" to="/order">تابع طلبك</Link>
-                        {r.deviceId && <FileButton variant="secondary" compact pill onClick={() => onChat(r.ownerName, undefined, dmChannelId(r.deviceId as string, myUid))}>كلم {r.ownerName}</FileButton>}
-                        <FileButton variant="ghost" compact onClick={() => onCancelRequest(r.id)}>الغي الطلب</FileButton>
-                    </div>
-                </div>
-            </div>)}
-            <Caption>الطلب بيتسجل على السيرفر والمالك بيشوفه في حسابه في نفس اللحظة.</Caption>
-        </Group>}
-        {incoming.length > 0 && <Group label="طلبات على أجهزتك" heading>
-            {incoming.map(o => <div key={o.id} className="nexus-notice">
-                <div className="nexus-card-title">حد عايز يأجر جهازك</div>
-                <div className="nexus-muted">{o.renterName} طلب {o.title} لمدة {yom(o.days)} · إيجار <bdi>{o.rent}</bdi> ج.م{o.fromMs ? ` · يستلم يوم ${new Date(o.fromMs).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}` : ''}</div>
-                <div className="nexus-muted">جهازك متاح للإيجار دلوقتي؟</div>
-                <div className="nexus-card-actions">
-                    <FileButton variant="primary" compact pill onClick={() => onOwnerAnswer(o, true)}>متاح</FileButton>
-                    <FileButton variant="ghost" compact onClick={() => onOwnerAnswer(o, false)}>مش متاح دلوقتي</FileButton>
-                    {o.deviceId && <FileButton variant="secondary" compact pill onClick={() => onChat(o.renterName, undefined, dmChannelId(o.deviceId as string, o.renterId))}>كلم {o.renterName}</FileButton>}
-                </div>
-            </div>)}
-        </Group>}
-        {myListings.length > 0 && <Group label="إعلاناتك" heading>
-            {myListings.map(l => {
-                const active = orders.find(o => o.deviceId === l.id && ORDER_BUSY.includes(o.status));
-                return <div key={l.id}>
-                    <ConsoleCard listing={l} onDelete={l.status === 'rented' ? undefined : onDeleteListing} onTrack={() => onTrack(l)} />
-                    {l.status === 'rented' && <div className="nexus-status-line"><span className="nexus-dot nexus-dot-red" />قيد الإيجار{active ? ` · ${statusAr(active.status)}` : ''}</div>}
-                    {active && l.status !== 'rented' && <div className="nexus-status-line"><span className="nexus-dot nexus-dot-pink" />{statusAr(active.status)} · المستأجر: {active.renterName}</div>}
-                </div>;
-            })}
-            <Caption>الإعلان المؤجر بيختفي من صفحة الإعلانات العامة، وانت بس اللي شايفه هنا. تقدر تتبع مكان جهازك طول ما هو بره.</Caption>
-        </Group>}
-        {(() => { const visibleChats = chats.filter(c => !c.id.startsWith('order_') || orders.some(o => o.id === c.id.slice(6))); return visibleChats.length > 0 && <Group label="الرسايل" heading>
-            {visibleChats.map(c => <div key={c.id} className="nexus-card nexus-user-row" role="button" tabIndex={0} onClick={() => onOpenChat(c)} onKeyDown={e => { if (e.key === 'Enter') onOpenChat(c); }}>
-                <div className="nexus-card-body">
-                    <div className="nexus-card-title">{chatName(c)}</div>
-                    <div className="nexus-muted">{c.deviceTitle || 'محادثة'}{c.lastText ? ` · ${c.lastText}` : ''}</div>
-                </div>
-            </div>)}
-        </Group>; })()}
-        <Group label="طبقات النجوم" heading="كل ما تأجر أكتر، تكسب أكتر">
-            <Rows>
-                <Row number={1} name="برونزي" detail="من أول إيجار" value="شارة مؤجر جديد" />
-                <Row number={2} name="فضي" detail="خمس إيجارات مكتملة" value="خصم 5 في المية من العمولة" />
-                <Row number={3} name="دهبي" detail="خمستاشر إيجار مكتمل" value="خصم 10 في المية وأولوية ظهور" />
-            </Rows>
-            <Caption>التقييمات بتظهر بعد أول إيجار مكتمل.</Caption>
-        </Group>
-        <Group label="خدمة العملاء" heading>
-            <Paragraph>عندك مشكلة أو سؤال؟ كلم الدعم في أي وقت، أو قدم شكوى رسمية والإدارة تراجعها.</Paragraph>
-            <div className="nexus-card-actions">
-                <FileButton variant="secondary" compact pill onClick={onSupport}>كلم الدعم</FileButton>
-                <FileButton variant="ghost" compact onClick={onComplain}>قدم شكوى</FileButton>
-            </div>
-        </Group>
-        <div className="nexus-card-actions">
-            <FileButton variant="ghost" compact onClick={onSignOut}>سجل خروج من الحساب</FileButton>
+    const rated = myListings.filter(l => l.reviews > 0);
+    const myRating = rated.length ? (Math.round(rated.reduce((s, l) => s + l.rating, 0) / rated.length * 10) / 10).toString() : '—';
+    const tier = doneCount >= 15 ? { name: 'الذهبي', perk: 'خصم ١٠٪؜' } : doneCount >= 5 ? { name: 'الفضي', perk: 'خصم ٥٪؜ من العمولة' } : { name: 'البرونزي', perk: 'من أول إيجار' };
+    const arrow = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 5l-7 7 7 7"/></svg>;
+    const scrollTo = (id: string) => { try { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { /* تجاهل */ } };
+    const secTitle = (t: string) => <div style={{ fontSize: 15, fontWeight: 800, margin: '4px 2px 0' }}>{t}</div>;
+    return <div className="nd-page" style={{ paddingBottom: 120 }}>
+        <div style={{ textAlign: 'center', paddingTop: 34 }}>
+            <div style={{ margin: '0 auto', width: 78, height: 78, filter: 'drop-shadow(0 12px 26px var(--nd-accglow))' }}><UserAvatar profile={profile} size={78} /></div>
+            <div style={{ fontSize: 20, fontWeight: 800, marginTop: 10 }}>{profile.name}</div>
+            <div className="nd-note" style={{ marginTop: 2 }}>{profile.address}{profile.address && profile.phone ? ' · ' : ''}<bdi>{profile.phone}</bdi></div>
+            <div style={{ marginTop: 10 }}><span className="nd-chip2" style={{ background: 'var(--nd-acc2)', color: '#fff' }}>المستوى {tier.name} · {tier.perk}</span></div>
         </div>
-    </>;
+        <div style={{ padding: '18px 22px 0', display: 'flex', gap: 10 }}>
+            <div className="nd-stat"><b>{myOrders.filter(o => o.status !== 'declined').length}</b><span>تأجيرات</span></div>
+            <div className="nd-stat"><b>{myListings.length}</b><span>أجهزة معروضة</span></div>
+            <div className="nd-stat"><b>{myRating}</b><span>تقييمي</span></div>
+        </div>
+        <div style={{ padding: '14px 22px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <Link className="nd-mrow" to="/orders" style={{ textDecoration: 'none' }}><div className="nd-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg></div><b>طلباتي</b>{arrow}</Link>
+            <button type="button" className="nd-mrow" onClick={() => scrollTo('sec-listings')}><div className="nd-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 12h4M18 11v2"/></svg></div><b>أجهزتي للتأجير</b>{arrow}</button>
+            <button type="button" className="nd-mrow" onClick={() => scrollTo('sec-chats')}><div className="nd-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v12H9l-5 4z"/></svg></div><b>المحادثات</b>{arrow}</button>
+            <button type="button" className="nd-mrow" onClick={onEditProfile}><div className="nd-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></div><b>تعديل البروفايل والبطاقة</b>{arrow}</button>
+            <button type="button" className="nd-mrow" onClick={onSignOut}><div className="nd-ic" style={{ color: '#ff6b6b' }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg></div><b style={{ color: '#ff6b6b' }}>تسجيل خروج</b></button>
+        </div>
+        <div style={{ padding: '18px 22px 0', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {rentalOrder && <>
+                <ActiveRental
+                    rental={{ title: rentalOrder.title, owner: rentalOrder.ownerName, ownerPhone: rentalOrder.ownerPhone || '', pricePerDay: rentalOrder.pricePerDay, days: rentalOrder.days, startMs: rentalOrder.deliveredAt || rentalOrder.createdMs, returned: rentalOrder.status === 'returning', channelId: rentalOrder.deviceId ? dmChannelId(rentalOrder.deviceId, myUid) : undefined }}
+                    onReturn={onReturn} returnCheck={rentalOrder.returnCheck || EMPTY_COND} onReturnCheck={onReturnCheck} onChat={onChat} />
+            </>}
+            {incoming.length > 0 && <>
+                {secTitle('طلبات على أجهزتك')}
+                {incoming.map(o => <div key={o.id} className="nd-card">
+                    <b style={{ fontSize: 14 }}>حد عايز يأجر جهازك</b>
+                    <div className="nd-note" style={{ marginTop: 4 }}>{o.renterName} طلب {o.title} لمدة {yom(o.days)} · إيجار <bdi>{o.rent}</bdi> ج.م{o.fromMs ? ` · يستلم يوم ${new Date(o.fromMs).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}` : ''}</div>
+                    <div className="nd-note" style={{ marginTop: 4 }}>جهازك متاح للإيجار دلوقتي؟</div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                        <button type="button" className="nd-btn" style={{ flex: 1, minWidth: 110, padding: 11 }} onClick={() => onOwnerAnswer(o, true)}>متاح</button>
+                        <button type="button" className="nd-btn2" style={{ flex: 1, minWidth: 110, padding: 11 }} onClick={() => onOwnerAnswer(o, false)}>مش متاح دلوقتي</button>
+                        {o.deviceId && <button type="button" className="nd-btn2" style={{ padding: 11 }} onClick={() => onChat(o.renterName, undefined, dmChannelId(o.deviceId as string, o.renterId))}>كلم {o.renterName}</button>}
+                    </div>
+                </div>)}
+            </>}
+            <div id="sec-listings" />
+            {myListings.length > 0 && <>
+                {secTitle('أجهزتي للتأجير')}
+                {myListings.map(l => {
+                    const active = orders.find(o => o.deviceId === l.id && ORDER_BUSY.includes(o.status));
+                    return <div key={l.id} className="nd-card" style={{ padding: 0, overflow: 'hidden' }}>
+                        <ConsoleCard listing={l} onDelete={l.status === 'rented' ? undefined : onDeleteListing} onTrack={() => onTrack(l)} />
+                        {(l.status === 'rented' || active) && <div className="nd-note" style={{ padding: '0 14px 12px' }}>{l.status === 'rented' ? `قيد الإيجار${active ? ` · ${statusAr(active.status)}` : ''}` : `${statusAr((active as OrderDoc).status)} · المستأجر: ${(active as OrderDoc).renterName}`}</div>}
+                    </div>;
+                })}
+                <div className="nd-note">الإعلان المؤجر بيختفي من صفحة الإعلانات العامة، وانت بس اللي شايفه هنا. تقدر تتبع مكان جهازك طول ما هو بره.</div>
+            </>}
+            <div id="sec-chats" />
+            {(() => { const visibleChats = chats.filter(c => !c.id.startsWith('order_') || orders.some(o => o.id === c.id.slice(6))); return visibleChats.length > 0 && <>
+                {secTitle('المحادثات')}
+                {visibleChats.map(c => <button key={c.id} type="button" className="nd-mrow" onClick={() => onOpenChat(c)}>
+                    <div className="nd-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v12H9l-5 4z"/></svg></div>
+                    <b>{chatName(c)}</b>
+                    <span className="nd-note" style={{ fontSize: 11.5, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.lastText || c.deviceTitle || 'محادثة'}</span>
+                </button>)}
+            </>; })()}
+            {secTitle('طبقات النجوم')}
+            <div className="nd-card">
+                <div className="nd-note" style={{ marginBottom: 10 }}>كل ما تأجر أكتر، تكسب أكتر. عندك {doneCount} إيجار مكتمل.</div>
+                <div className="nd-row" style={{ padding: '7px 0' }}><span style={{ fontSize: 13, fontWeight: 700 }}>برونزي</span><span className="nd-note" style={{ fontSize: 12 }}>من أول إيجار · شارة مؤجر جديد</span></div>
+                <div className="nd-row" style={{ padding: '7px 0' }}><span style={{ fontSize: 13, fontWeight: 700 }}>فضي</span><span className="nd-note" style={{ fontSize: 12 }}>٥ إيجارات مكتملة · خصم ٥٪؜ من العمولة</span></div>
+                <div className="nd-row" style={{ padding: '7px 0' }}><span style={{ fontSize: 13, fontWeight: 700 }}>دهبي</span><span className="nd-note" style={{ fontSize: 12 }}>١٥ إيجار مكتمل · خصم ١٠٪؜ وأولوية ظهور</span></div>
+                <div className="nd-pbar" style={{ marginTop: 10 }}><i style={{ width: `${Math.min(100, (doneCount / 15) * 100)}%` }} /></div>
+            </div>
+            {secTitle('خدمة العملاء')}
+            <div className="nd-card">
+                <div className="nd-note">عندك مشكلة أو سؤال؟ كلم الدعم في أي وقت، أو قدم شكوى رسمية والإدارة تراجعها.</div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                    <button type="button" className="nd-btn2" style={{ flex: 1, padding: 11 }} onClick={onSupport}>كلم الدعم</button>
+                    <button type="button" className="nd-btn2" style={{ flex: 1, padding: 11 }} onClick={onComplain}>قدم شكوى</button>
+                </div>
+            </div>
+            <div className="nd-note" style={{ textAlign: 'center' }}><bdi>{email}</bdi></div>
+        </div>
+    </div>;
 }
 
 function ComplaintDialog({ from, onSubmit, onClose }: { from: string; onSubmit: (subject: string, detail: string) => void; onClose: () => void }) {
@@ -1292,88 +1577,108 @@ function CourierPanel({ feed, myUid, myName, exactLoc, onTake, onPickedUp, onArr
     </>;
 }
 
-function AdminPage({ users, complaints, orders, devices, onCloseComplaint, onDeleteUser }: {
+function AdminPage({ users, complaints, orders, devices, onCloseComplaint, onDeleteUser, onExit }: {
     users: AdminUserDoc[]; complaints: ComplaintDoc[]; orders: OrderDoc[]; devices: DeviceDoc[];
-    onCloseComplaint: (id: string) => void; onDeleteUser: (id: string) => void;
+    onCloseComplaint: (id: string) => void; onDeleteUser: (id: string) => void; onExit: () => void;
 }) {
     const [selected, setSelected] = useState<AdminUserDoc | null>(null);
+    const [tab, setTab] = useState<'users' | 'complaints' | 'orders'>('users');
     const activeOrders = orders.filter(o => ORDER_BUSY.includes(o.status) || o.status === 'requested');
-    const rentedCount = devices.filter(d => d.status === 'rented').length;
     const openComplaints = complaints.filter(c => c.status === 'مفتوحة');
-    return <>
-        <Group label="لوحة الإدارة" heading="نظرة عامة">
-            <Facts items={[
-                { label: 'المستخدمين المسجلين', value: `${users.length}` },
-                { label: 'الإعلانات المنشورة', value: `${devices.length}` },
-                { label: 'طلبات شغالة دلوقتي', value: `${activeOrders.length}` },
-                { label: 'أجهزة قيد الإيجار', value: `${rentedCount}` },
-                { label: 'شكاوى مفتوحة', value: `${openComplaints.length}` },
-            ]} />
-            <Callout title="الأرقام دي حقيقية" tone="note">كل الأرقام والمستخدمين والطلبات هنا لايف من السيرفر، بتتحدث لحظة بلحظة.</Callout>
-        </Group>
-        <Group label="المستخدمين" heading={`${users.length} مسجل`}>
-            {users.map(u => <div key={u.id} className="nexus-card nexus-user-row" role="button" tabIndex={0} onClick={() => setSelected(u)} onKeyDown={e => { if (e.key === 'Enter') setSelected(u); }}>
-                <div className="nexus-card-body">
-                    <div className="nexus-card-title">{u.name}</div>
-                    <div className="nexus-muted"><bdi>{u.phone}</bdi> · {u.address}</div>
-                    <div className="nexus-muted"><bdi>{u.email || ''}</bdi> · {devices.filter(d => d.ownerId === u.id).length} إعلان</div>
-                </div>
-            </div>)}
-        </Group>
-        <Group label="الطلبات والإيجارات الحالية" heading>
-            {activeOrders.length === 0 && <Caption>مفيش طلبات شغالة دلوقتي.</Caption>}
-            <Rows>
-                {activeOrders.map((o, i) => <Row key={o.id} number={i + 1} name={o.title} detail={`المستأجر: ${o.renterName} · المالك: ${o.ownerName}`} value={statusAr(o.status)} valueKnown />)}
-            </Rows>
-        </Group>
-        <Group label="الشكاوى" heading={`${complaints.length} شكوى`}>
-            {complaints.length === 0 && <Caption>مفيش شكاوى لحد دلوقتي.</Caption>}
-            {complaints.map(c => {
-                const closed = c.status !== 'مفتوحة';
-                return <div key={c.id} className="nexus-card"><div className="nexus-card-body">
-                    <div className="nexus-card-title">{c.subject}</div>
-                    <div className="nexus-muted">من {c.from} · {new Date(c.createdAt).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long' })}</div>
-                    <div className="nexus-muted">{c.detail}</div>
-                    <div className="nexus-card-actions">
-                        <span className={closed ? 'nexus-chip' : 'nexus-chip nexus-chip-open'}>{closed ? 'مقفولة' : 'مفتوحة'}</span>
-                        {!closed && <FileButton variant="ghost" compact onClick={() => onCloseComplaint(c.id)}>اقفل الشكوى</FileButton>}
+    const trash = <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>;
+    return <div className="nd-page">
+        <div className="nd-topbar">
+            <button type="button" className="nd-back" onClick={onExit} aria-label="خروج من لوحة الإدارة"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
+            <b>لوحة الإدارة</b><div style={{ flex: 1 }} /><span className="nd-chip2 warn">لايف</span>
+        </div>
+        <div style={{ padding: '4px 22px 40px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', gap: 10 }}>
+                <div className="nd-stat"><b>{users.length}</b><span>مستخدم</span></div>
+                <div className="nd-stat"><b>{activeOrders.length}</b><span>طلب شغال</span></div>
+                <div className="nd-stat"><b>{openComplaints.length}</b><span>شكاوى مفتوحة</span></div>
+            </div>
+            <div className="nd-note" style={{ textAlign: 'center' }}>كل الأرقام والمستخدمين والطلبات هنا لايف من السيرفر، بتتحدث لحظة بلحظة.</div>
+            <div className="nd-seg">
+                <button type="button" className={tab === 'users' ? 'on' : ''} onClick={() => setTab('users')}>المستخدمين</button>
+                <button type="button" className={tab === 'complaints' ? 'on' : ''} onClick={() => setTab('complaints')}>الشكاوى</button>
+                <button type="button" className={tab === 'orders' ? 'on' : ''} onClick={() => setTab('orders')}>الطلبات</button>
+            </div>
+            {tab === 'users' && <>
+                {users.length === 0 && <div className="nd-note" style={{ textAlign: 'center' }}>مفيش مستخدمين لحد دلوقتي.</div>}
+                {users.map(u => <button key={u.id} type="button" className="nd-card nd-row" style={{ width: '100%', textAlign: 'start', cursor: 'pointer', border: 0, fontFamily: 'inherit' }} onClick={() => setSelected(u)}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div className="nd-av">{u.photo ? <img src={u.photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (u.name || '؟').trim().charAt(0)}</div>
+                        <div><b style={{ fontSize: 13.5, color: 'var(--nd-ink)' }}>{u.name}</b><div className="nd-note"><bdi>{u.phone}</bdi> · {u.address} · {devices.filter(d => d.ownerId === u.id).length} إعلان</div></div>
                     </div>
-                </div></div>;
-            })}
-        </Group>
-        {selected !== null && <div className="nexus-overlay" role="dialog" aria-modal="true" aria-label="بيانات المستخدم" onClick={() => setSelected(null)}>
-            <div className="nexus-sheet" onClick={e => e.stopPropagation()}>
-                <div className="nexus-sheet-close"><CloseButton label="إغلاق" onClick={() => setSelected(null)} /></div>
-                <h2 className="nexus-sheet-title">{selected.name}</h2>
-                <Facts items={[
-                    { label: 'الموبايل', value: selected.phone },
-                    { label: 'الإيميل', value: selected.email || '—' },
-                    { label: 'السن', value: `${selected.age} سنة` },
-                    { label: 'العنوان', value: selected.address },
-                    { label: 'إعلاناته', value: `${devices.filter(d => d.ownerId === selected.id).length}` },
-                    { label: 'طلباته', value: `${orders.filter(o => o.renterId === selected.id || o.ownerId === selected.id).length}` },
-                ]} />
-                <div className="nexus-photo-compare">
+                    <div style={{ color: '#ff6b6b' }}>{trash}</div>
+                </button>)}
+            </>}
+            {tab === 'complaints' && <>
+                {complaints.length === 0 && <div className="nd-note" style={{ textAlign: 'center' }}>مفيش شكاوى لحد دلوقتي.</div>}
+                {complaints.map(c => {
+                    const closed = c.status !== 'مفتوحة';
+                    return <div key={c.id} className="nd-card">
+                        <div className="nd-row">
+                            <div style={{ flex: 1 }}>
+                                <b style={{ fontSize: 13 }}>شكوى: {c.subject}</b>
+                                <div className="nd-note">من {c.from} · {new Date(c.createdAt).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long' })}</div>
+                            </div>
+                            <span className={closed ? 'nd-chip2' : 'nd-chip2 warn'}>{closed ? 'مقفولة' : 'مفتوحة'}</span>
+                        </div>
+                        <div className="nd-note" style={{ marginTop: 6 }}>{c.detail}</div>
+                        {!closed && <button type="button" className="nd-btn2" style={{ width: '100%', marginTop: 10, padding: 10 }} onClick={() => onCloseComplaint(c.id)}>اقفل الشكوى</button>}
+                    </div>;
+                })}
+            </>}
+            {tab === 'orders' && <>
+                {activeOrders.length === 0 && <div className="nd-note" style={{ textAlign: 'center' }}>مفيش طلبات شغالة دلوقتي.</div>}
+                {activeOrders.map(o => <div key={o.id} className="nd-card nd-row">
                     <div>
-                        <div className="nexus-idphoto-label">صورته الشخصية</div>
-                        {selected.photo ? <img className="nexus-idphoto-full" src={selected.photo} alt="الصورة الشخصية للمستخدم" /> : <div className="nexus-idphoto-empty">لسه ما رفعش صورة شخصية</div>}
+                        <b style={{ fontSize: 13 }}>{o.title}</b>
+                        <div className="nd-note">المستأجر: {o.renterName} · المالك: {o.ownerName}</div>
                     </div>
-                    <div>
-                        <div className="nexus-idphoto-label">البطاقة (الوش)</div>
-                        {selected.idPhoto ? <img className="nexus-idphoto-full" src={selected.idPhoto} alt="صورة وش بطاقة المستخدم" /> : <div className="nexus-idphoto-empty">لسه ما رفعش الوش</div>}
-                    </div>
-                    <div>
-                        <div className="nexus-idphoto-label">البطاقة (الضهر)</div>
-                        {selected.idPhotoBack ? <img className="nexus-idphoto-full" src={selected.idPhotoBack} alt="صورة ضهر بطاقة المستخدم" /> : <div className="nexus-idphoto-empty">لسه ما رفعش الضهر</div>}
-                    </div>
+                    <span className="nd-chip2 on">{statusAr(o.status)}</span>
+                </div>)}
+            </>}
+        </div>
+        {selected !== null && <div className="nd-overlay" role="dialog" aria-modal="true" aria-label="بيانات المستخدم">
+            <div className="nd-topbar">
+                <button type="button" className="nd-back" onClick={() => setSelected(null)} aria-label="رجوع"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
+                <b>{selected.name}</b><div style={{ flex: 1 }} />
+            </div>
+            <div style={{ padding: '4px 22px 40px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', gap: 10 }}>
+                    <div className="nd-stat"><b style={{ fontSize: 13 }}><bdi>{selected.phone}</bdi></b><span>الموبايل</span></div>
+                    <div className="nd-stat"><b>{selected.age}</b><span>السن</span></div>
+                    <div className="nd-stat"><b>{devices.filter(d => d.ownerId === selected.id).length}</b><span>إعلان</span></div>
                 </div>
-                <Caption>قارن الصورتين عشان تتأكد إن صاحب الحساب هو صاحب البطاقة. الصور دي بتظهر في لوحة الإدارة بس.</Caption>
-                <div className="nexus-card-actions">
-                    <FileButton variant="ghost" compact onClick={() => { onDeleteUser(selected.id); setSelected(null); }}>احذف الحساب</FileButton>
+                <div className="nd-card">
+                    <div className="nd-note"><bdi>{selected.email || '—'}</bdi></div>
+                    <div className="nd-note">{selected.address}</div>
+                    <div className="nd-note">طلباته: {orders.filter(o => o.renterId === selected.id || o.ownerId === selected.id).length}</div>
                 </div>
+                <div className="nd-card">
+                    <b style={{ fontSize: 13 }}>الصورة الشخصية والبطاقة</b>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+                        <div>
+                            <div className="nd-note">صورته الشخصية</div>
+                            {selected.photo ? <img src={selected.photo} alt="الصورة الشخصية للمستخدم" style={{ width: '100%', borderRadius: 12 }} /> : <div className="nd-note">لسه ما رفعش صورة شخصية</div>}
+                        </div>
+                        <div>
+                            <div className="nd-note">البطاقة (الوش)</div>
+                            {selected.idPhoto ? <img src={selected.idPhoto} alt="صورة وش بطاقة المستخدم" style={{ width: '100%', borderRadius: 12 }} /> : <div className="nd-note">لسه ما رفعش الوش</div>}
+                        </div>
+                        <div>
+                            <div className="nd-note">البطاقة (الضهر)</div>
+                            {selected.idPhotoBack ? <img src={selected.idPhotoBack} alt="صورة ضهر بطاقة المستخدم" style={{ width: '100%', borderRadius: 12 }} /> : <div className="nd-note">لسه ما رفعش الضهر</div>}
+                        </div>
+                    </div>
+                    <div className="nd-note" style={{ marginTop: 8 }}>قارن الصورتين عشان تتأكد إن صاحب الحساب هو صاحب البطاقة. الصور دي بتظهر في لوحة الإدارة بس.</div>
+                </div>
+                <button type="button" className="nd-btn2" style={{ padding: 12, color: '#ff6b6b', fontWeight: 800 }} onClick={() => { onDeleteUser(selected.id); setSelected(null); }}>احذف الحساب</button>
             </div>
         </div>}
-    </>;
+    </div>;
 }
 
 function Drawer({ open, profile, myCount, email, onClose, onGuide, onSupport, onSignOut }: { open: boolean; profile: UserProfile | null; myCount: number; email?: string; onClose: () => void; onGuide: () => void; onSupport: () => void; onSignOut?: () => void }) {
@@ -1407,7 +1712,9 @@ function Drawer({ open, profile, myCount, email, onClose, onGuide, onSupport, on
 const SHOT = typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_SHOT === '1';
 
 function AuthPage() {
-    const [mode, setMode] = useState<'login' | 'signup'>('signup');
+    const [mode, setMode] = useState<'login' | 'signup'>(() => {
+        try { return new URLSearchParams(window.location.search).get('shot_auth') === 'login' ? 'login' : 'signup'; } catch { return 'signup'; }
+    });
     const [email, setEmail] = useState('');
     const [pw, setPw] = useState('');
     const [busy, setBusy] = useState(false);
@@ -1422,21 +1729,25 @@ function AuthPage() {
         catch (x) { setErr(authErrorAr(x)); }
         setBusy(false);
     };
-    return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-        <Header title="NEXUS" fact="نسخة 1.7" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، والمندوب يوصله لحد بابك." />
-        <Group label={mode === 'signup' ? 'حساب جديد' : 'تسجيل دخول'} heading={mode === 'signup' ? 'اعمل حسابك في دقيقة' : 'أهلًا برجوعك'}>
-            <span className="nexus-idphoto-label">الإيميل</span>
-            <input className="nexus-chat-input" dir="ltr" type="email" autoComplete="email" value={email} onChange={e => { setEmail(e.target.value); setErr(''); }} placeholder="name@gmail.com" aria-label="الإيميل" />
-            <span className="nexus-idphoto-label">الباسورد</span>
-            <input className="nexus-chat-input" dir="ltr" type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} value={pw} onChange={e => { setPw(e.target.value); setErr(''); }} onKeyDown={e => { if (e.key === 'Enter') submit(); }} placeholder="٦ حروف أو أرقام على الأقل" aria-label="الباسورد" />
-            {err && <Callout title="راجع البيانات" tone="danger">{err}</Callout>}
-            <FileButton variant="primary" pill disabled={busy} onClick={submit}>{busy ? 'ثواني...' : mode === 'signup' ? 'اعمل الحساب' : 'ادخل'}</FileButton>
-            <button type="button" className="nexus-linklike" onClick={() => { setMode(mode === 'signup' ? 'login' : 'signup'); setErr(''); }}>
-                {mode === 'signup' ? 'عندك حساب بالفعل؟ سجل دخولك' : 'أول مرة هنا؟ اعمل حساب جديد'}
-            </button>
-            <Caption>حسابك بيتسجل على سيرفر Firebase. بعد ما تعمل الحساب هنطلب صورتك الشخصية وصورة بطاقتك، وده مطلوب للأمان عشان كل طرف يبقى معروف.</Caption>
-        </Group>
-    </div></FileCard>;
+    return <div className="nd-page">
+        <div className="nd-glow" style={{ width: 280, height: 280, background: 'var(--nd-g1)', top: -90, right: -70 }} />
+        <div style={{ padding: '96px 22px 0', textAlign: 'center' }}>
+            <div className="nd-logo">N</div>
+            <div style={{ fontSize: 27, fontWeight: 800, marginTop: 14 }}>نيكسوس</div>
+            <div className="nd-note" style={{ marginTop: 4 }}>أجّر كونسول من جارك، بأمان</div>
+        </div>
+        <div className="nd-pad" style={{ marginTop: 30, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="nd-field"><label>الإيميل</label><input dir="ltr" type="email" autoComplete="email" value={email} onChange={e => { setEmail(e.target.value); setErr(''); }} placeholder="name@gmail.com" aria-label="الإيميل" /></div>
+            <div className="nd-field"><label>الباسورد</label><input dir="ltr" type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} value={pw} onChange={e => { setPw(e.target.value); setErr(''); }} onKeyDown={e => { if (e.key === 'Enter') submit(); }} placeholder="٦ حروف أو أرقام على الأقل" aria-label="الباسورد" /></div>
+            {err && <div className="nd-err">{err}</div>}
+            <button type="button" className="nd-btn" style={{ marginTop: 6 }} disabled={busy} onClick={submit}>{busy ? 'ثواني...' : mode === 'signup' ? 'اعمل الحساب' : 'دخول'}</button>
+            <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--nd-mut)', marginTop: 4 }}>
+                {mode === 'signup' ? 'عندك حساب بالفعل؟ ' : 'جديد هنا؟ '}
+                <button type="button" className="nd-linklike" onClick={() => { setMode(mode === 'signup' ? 'login' : 'signup'); setErr(''); }}>{mode === 'signup' ? 'سجل دخولك' : 'اعمل حساب'}</button>
+            </div>
+            <div className="nd-note" style={{ textAlign: 'center' }}>حسابك بيتسجل على سيرفر Firebase. بعد إنشاء الحساب هنطلب صورتك الشخصية وصورة بطاقتك (وش وضهر)، وده مطلوب للأمان عشان كل طرف يبقى معروف.</div>
+        </div>
+    </div>;
 }
 
 function withDefaults(l: any): ConsoleListing {
@@ -1451,7 +1762,8 @@ export function App() {
     const [menuOpen, setMenuOpen] = useState(false);
     const [guideOpen, setGuideOpen] = useState(false);
     const [detail, setDetail] = useState<ConsoleListing | null>(null);
-    const [editProfile, setEditProfile] = useState(false);
+    const [reviewTarget, setReviewTarget] = useState<OrderDoc | null>(null);
+    const [editProfile, setEditProfile] = useState(() => { try { return SHOT && new URLSearchParams(window.location.search).get('shot_edit') === '1'; } catch { return false; } });
     const [complaintOpen, setComplaintOpen] = useState(false);
     const [gateStep, setGateStep] = useState<'none' | 'password' | 'role'>('none');
     const [adminRole, setAdminRole] = useState<null | 'courier' | 'admin'>(null);
@@ -1487,12 +1799,18 @@ export function App() {
     }, [themeMode]);
 
     useEffect(() => {
+        const h = () => setThemeMode(m => (m === 'light' ? 'dark' : 'light'));
+        window.addEventListener('nexus-toggle-theme', h);
+        return () => window.removeEventListener('nexus-toggle-theme', h);
+    }, []);
+
+    useEffect(() => {
         if (!SHOT) return;
         const q = new URLSearchParams(window.location.search);
         if (q.get('shot_menu') === '1') setMenuOpen(true);
         if (q.get('shot_gate') === 'password') setGateStep('password');
         const ch = q.get('shot_chat');
-        if (ch) setChatWith({ name: q.get('shot_chatname') || 'محادثة', channelId: ch });
+        if (ch) setChatWith({ name: q.get('shot_chatname') || 'محادثة', channelId: ch, suggestions: COURIER_CHAT_SUGGESTIONS });
         const sr = q.get('shot_role');
         if (sr === 'courier' || sr === 'admin') setAdminRole(sr);
         if (q.get('shot_track') === '1') {
@@ -1513,7 +1831,7 @@ export function App() {
     }, [user]);
 
     const lpStart = (e: React.PointerEvent) => {
-        if (!(e.target as HTMLElement).closest('.file-title')) return;
+        if (!(e.target as HTMLElement).closest('.nd-name')) return;
         lpCancel();
         lpTimer.current = window.setTimeout(() => { lpTimer.current = null; setGateStep('password'); }, 650);
     };
@@ -1533,11 +1851,39 @@ export function App() {
         area: d.area, district: d.district, pricePerDay: d.pricePerDay, deposit: d.deposit, rating: d.rating, reviews: d.reviews,
         delivery: d.delivery, model: d.model, storage: d.storage, controllers: d.controllers, games: d.games, includes: d.includes,
         photoKey: d.photoKey, photoData: d.photoData, mine: d.ownerId === uid, status: d.status, createdAt: d.createdAt,
-        lat: d.lat, lng: d.lng,
+        lat: d.lat, lng: d.lng, reviewList: d.reviewList,
     }));
     const consoles: ConsoleListing[] = realListings.filter(l => l.status !== 'rented');
+    useEffect(() => {
+        try {
+            if (!detail && new URLSearchParams(window.location.search).get('shot_detail') === '1' && consoles.length) setDetail(consoles[0]);
+        } catch { /* تجاهل */ }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [consoles]);
     const myListings = realListings.filter(l => l.ownerId === uid);
     const myOrders = orders.filter(o => o.renterId === uid);
+    useEffect(() => {
+        try {
+            if (!reviewTarget && new URLSearchParams(window.location.search).get('shot_review') === '1' && myOrders.length) {
+                const o = myOrders.find(x => x.status === 'returned') || myOrders[0];
+                setReviewTarget(o); window.location.hash = '/review';
+            }
+        } catch { /* تجاهل */ }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [myOrders]);
+    const submitReview = (o: OrderDoc, stars: number, tags: string[], text: string, ownerStars: number) => {
+        const l = realListings.find(x => x.id === o.deviceId);
+        const jobs: Promise<any>[] = [run(fbUpdateOrder(o.id, { reviewed: true }), 'التقييم ماتحفظش. جرب تاني.')];
+        if (l) {
+            const entry: ReviewEntry = { name: profile.name, stars, text: text.trim(), tags, ownerStars, ts: Date.now() };
+            const list = [...(l.reviewList || []), entry].slice(-20);
+            const reviews = (l.reviews || 0) + 1;
+            const rating = Math.round((((l.rating || 0) * (l.reviews || 0)) + stars) / reviews * 10) / 10;
+            jobs.push(run(fbUpdateDevice(l.id, { rating, reviews, reviewList: list } as any), 'التقييم ماتحفظش. جرب تاني.'));
+        }
+        return Promise.all(jobs);
+    };
+
     const incoming = orders.filter(o => o.ownerId === uid && o.status === 'requested');
     const currentOrder = myOrders.find(o => ['accepted', 'taken', 'pickedup', 'arrived'].includes(o.status)) || null;
     const rentalOrder = myOrders.find(o => o.status === 'delivered' || o.status === 'returning') || null;
@@ -1545,8 +1891,15 @@ export function App() {
     const exactLoc = useExactLocations(devList, uid);
 
     const requestConsole = (l: ConsoleListing) => {
-        setRequestTarget({ title: l.title, owner: l.owner, ownerLine: `${l.owner} · ${areaName(l.area)}، ${l.district}`, pricePerDay: l.pricePerDay, deposit: l.deposit, number: l.number, deviceId: l.id, ownerId: l.ownerId });
+        setRequestTarget({ title: l.title, owner: l.owner, ownerLine: `${l.owner} · ${areaName(l.area)}، ${l.district}`, pricePerDay: l.pricePerDay, deposit: l.deposit, number: l.number, deviceId: l.id, ownerId: l.ownerId, kind: l.kind, photoKey: l.photoKey, photoData: l.photoData });
     };
+    useEffect(() => {
+        try {
+            if (!requestTarget && new URLSearchParams(window.location.search).get('shot_request') === '1' && consoles.length) requestConsole(consoles[0]);
+        } catch { /* تجاهل */ }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [consoles]);
+
 
     const ensureDm = (channelId: string) => {
         if (!user || !profile) return;
@@ -1641,52 +1994,39 @@ export function App() {
 
     if (user === undefined || (user && profileDoc === undefined) || devices === undefined || ordersAll === undefined) {
         return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-            <Header title="NEXUS" fact="نسخة 1.7" intro="ثواني وبنجهز حسابك من السيرفر..." />
+            <Header title="NEXUS" fact="نسخة 1.8" intro="ثواني وبنجهز حسابك من السيرفر..." />
         </div></FileCard>;
     }
     if (!user) return <> <AuthPage /> {SHOT && tracking && (() => {
         const lat = typeof tracking.lat === 'number' ? (tracking.lat as number) : AREA_CENTER['زايد'][0];
         const lng = typeof tracking.lng === 'number' ? (tracking.lng as number) : AREA_CENTER['زايد'][1];
-        return <TrackingDialog title={tracking.title} lat={lat} lng={lng} exact={false} place={[tracking.district, areaName(tracking.area)].filter(Boolean).join('، ')} onClose={() => setTracking(null)} />;
+        return <TrackingDialog listing={tracking} lat={lat} lng={lng} exact={false} onClose={() => setTracking(null)} />;
     })()} </>;
     if (!profile) {
-        return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-            <Header title="NEXUS" fact="نسخة 1.7" intro="آخر خطوة: عرفنا بنفسك. بياناتك بتتحفظ على السيرفر بأمان، وصورتك وصورة بطاقتك للإدارة بس." />
-            <Group label="بياناتك" heading="معلوماتك الأساسية">
-                <ProfileForm initial={null} submitLabel="احفظ وابدأ" onSave={saveProfile} />
-            </Group>
-        </div></FileCard>;
+        return <ProfileForm initial={null} submitLabel="يلا نبدأ" onSave={saveProfile} />;
     }
     return <FileCard lang="ar" dir="rtl">
         <div className="nexus-app">
-        <div className="nexus-topbar">
-            <button type="button" className="nexus-menu-btn" aria-label="افتح القائمة" onClick={() => setMenuOpen(true)}>⋮</button>
-            <button type="button" className="nexus-menu-btn nexus-theme-btn" aria-label={themeMode === 'dark' ? 'حوّل للوضع الفاتح' : 'حوّل للوضع الداكن'} title={themeMode === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'} onClick={() => setThemeMode(themeMode === 'dark' ? 'light' : 'dark')}><Icon name={themeMode === 'dark' ? 'sun' : 'moon'} size={20} /></button>
-        </div>
         <div onPointerDown={lpStart} onPointerUp={lpCancel} onPointerMove={lpCancel} onPointerLeave={lpCancel} onPointerCancel={lpCancel}
-            onContextMenu={e => { if ((e.target as HTMLElement).closest('.file-title')) e.preventDefault(); }}>
-            <Header title="NEXUS" fact="نسخة 1.7" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، كلم صاحبها، وادفع كاش عند الاستلام." />
-        </div>
-        <Callout title="متصل بسيرفر حقيقي" tone="note">الإعلانات والطلبات والشات حقيقية وبتتحفظ على السيرفر لحظة بلحظة، والدفع كاش عند الاستلام مع المندوب.</Callout>
-        <Drawer open={menuOpen} profile={profile} myCount={myListings.length} email={user.email || ''} onClose={() => setMenuOpen(false)} onGuide={() => setGuideOpen(true)} onSupport={openSupport} onSignOut={() => { fbSignOut().catch(() => {}); }} />
+            onContextMenu={e => { if ((e.target as HTMLElement).closest('.nd-name')) e.preventDefault(); }}>
         <Routes>
-            <Route path="/" element={<Home consoles={consoles} onOpenConsole={setDetail} />} />
-            <Route path="/map" element={<MapPage consoles={consoles} onRequest={requestConsole} exactLoc={exactLoc} />} />
+            <Route path="/" element={<Home consoles={consoles} profile={profile} onOpenConsole={setDetail} />} />
+            <Route path="/map" element={<MapPage consoles={consoles} onOpen={setDetail} exactLoc={exactLoc} />} />
+            <Route path="/orders" element={<OrdersPage myOrders={myOrders} consoles={consoles} onTrack={setTracking} onCancelRequest={(id) => run(fbDeleteOrder(id), 'الطلب ماتلغاش. جرب تاني.')} onOpenOrder={() => { window.location.hash = '/order'; }} onRate={(o) => { setReviewTarget(o); window.location.hash = '/review'; }} />} />
             <Route path="/add" element={<AddPage onAdd={addListing} blocked={!!rentalOrder} profile={profile} />} />
             <Route path="/admin" element={adminRole === 'courier'
                 ? <CourierPanel feed={courierFeed} myUid={uid} myName={profile.name} exactLoc={exactLoc}
                     onTake={courierTake} onPickedUp={courierPickedUp} onArrived={courierArrived} onDeliver={courierDeliver} onReturnDone={courierReturnDone}
                     onChat={(n, s, ch) => handleChat(n, s, ch)} onExit={() => { setAdminRole(null); window.location.hash = '/'; }} />
                 : adminRole === 'admin'
-                    ? <>
-                        <AdminPage users={adminUsers || []} complaints={adminComplaints || []} orders={orders} devices={devList}
-                            onCloseComplaint={(id) => run(fbCloseComplaint(id), 'ماتقفلتش. جرب تاني.')}
-                            onDeleteUser={(id) => run(fbDeleteUser(id), 'ماتمسحش. جرب تاني.')} />
-                        <div className="nexus-card-actions"><FileButton variant="ghost" compact onClick={() => { setAdminRole(null); window.location.hash = '/'; }}>خروج من لوحة الإدارة</FileButton></div>
-                    </>
+                    ? <AdminPage users={adminUsers || []} complaints={adminComplaints || []} orders={orders} devices={devList}
+                        onCloseComplaint={(id) => run(fbCloseComplaint(id), 'ماتقفلتش. جرب تاني.')}
+                        onDeleteUser={(id) => run(fbDeleteUser(id), 'ماتمسحش. جرب تاني.')}
+                        onExit={() => { setAdminRole(null); window.location.hash = '/'; }} />
                     : <Group label="الصفحة دي مش موجودة" heading="اتوجهت غلط"><Callout title="مفيش حاجة هنا" tone="note">الصفحة دي مش متاحة. ارجع للإعلانات.</Callout><Link className="file-button is-compact" data-variant="secondary" to="/">ارجع للإعلانات</Link></Group>} />
             <Route path="/detail" element={<ConsoleDetailPage listing={detail} busy={busyDaysFor(detail, orders)} onRequest={() => detail && requestConsole(detail)} onChat={() => detail && openDmFor(detail)} />} />
             <Route path="/order" element={<OrderPage order={currentOrder} onHandoverCheck={(v) => currentOrder && run(fbUpdateOrder(currentOrder.id, { handoverCheck: v }), 'ماتحفظتش. جرب تاني.')} onChat={handleChat} />} />
+            <Route path="/review" element={<ReviewPage order={reviewTarget} consoles={realListings} onSubmit={submitReview} />} />
             <Route path="/request" element={<RequestPage target={requestTarget} hasOpenRequest={myOrders.some(o => o.status === 'requested')} busy={busyForTarget} onConfirm={confirmRequest} />} />
             <Route path="/profile" element={<ProfilePage profile={profile} myUid={uid} email={user.email || ''} myOrders={myOrders} incoming={incoming} myListings={myListings} orders={orders} rentalOrder={rentalOrder} chats={chats || []}
                 onEditProfile={() => setEditProfile(true)}
@@ -1699,7 +2039,7 @@ export function App() {
                 onSupport={openSupport} onComplain={() => setComplaintOpen(true)}
                 onSignOut={() => { fbSignOut().catch(() => {}); }} />} />
         </Routes>
-        <BottomNav onGuide={() => setGuideOpen(true)} />
+        <BottomNav />
         {guideOpen && <GuideDialog onClose={() => setGuideOpen(false)} />}
         {complaintOpen && <ComplaintDialog from={profile.name} onSubmit={submitComplaint} onClose={() => setComplaintOpen(false)} />}
         {gateStep !== 'none' && <AdminGateDialog step={gateStep} onRole={pickRole} onClose={() => setGateStep('none')} />}
@@ -1710,18 +2050,15 @@ export function App() {
             const lat = ex ? ex.lat : (typeof tracking.lat === 'number' ? (tracking.lat as number) : (AREA_CENTER[tracking.area] || AREA_CENTER['زايد'])[0]);
             const lng = ex ? ex.lng : (typeof tracking.lng === 'number' ? (tracking.lng as number) : (AREA_CENTER[tracking.area] || AREA_CENTER['زايد'])[1]);
             const place = [tracking.district, areaName(tracking.area)].filter(Boolean).join('، ');
-            return <TrackingDialog title={tracking.title} lat={lat} lng={lng} exact={hasExact} place={place} onClose={() => setTracking(null)} />;
+            return <TrackingDialog listing={tracking} lat={lat} lng={lng} exact={hasExact} onClose={() => setTracking(null)} />;
         })()}
-        {editProfile && <div className="nexus-overlay" role="dialog" aria-modal="true" aria-label="تعديل بياناتك">
-            <div className="nexus-sheet">
-                <div className="nexus-sheet-close"><CloseButton label="إغلاق" onClick={() => setEditProfile(false)} /></div>
-                <h2 className="nexus-sheet-title">عدل بياناتك</h2>
-                <ProfileForm initial={profile} submitLabel="احفظ التعديل" onSave={saveProfile} />
-            </div>
+        {editProfile && <div className="nd-overlay" role="dialog" aria-modal="true" aria-label="تعديل بياناتك">
+            <ProfileForm initial={profile} submitLabel="احفظ التعديلات" onSave={saveProfile} onBack={() => setEditProfile(false)} />
         </div>}
         {errNote && <Callout title="حصلت مشكلة" tone="danger">{errNote}</Callout>}
-        <Caption>صور الأجهزة: بلايستيشن 5 بواسطة Soberian وبلايستيشن 4 بواسطة Evan-Amos ودراع بلايستيشن بواسطة Viper polo وإكس بوكس سيريس إكس بواسطة epredator ودراع إكس بوكس بواسطة UKER، عبر ويكيميديا كومنز. أغلفة الألعاب رسوم توضيحية.</Caption>
-        <Closing>نسخة 1.7، متصلة بسيرفر Firebase حقيقي.</Closing>
+        <div className="nd-note" style={{ textAlign: 'center', padding: '0 22px' }}>صور الأجهزة: بلايستيشن 5 بواسطة Soberian وبلايستيشن 4 بواسطة Evan-Amos ودراع بلايستيشن بواسطة Viper polo وإكس بوكس سيريس إكس بواسطة epredator ودراع إكس بوكس بواسطة UKER، عبر ويكيميديا كومنز. أغلفة الألعاب رسوم توضيحية.</div>
+        <div className="nd-note" style={{ textAlign: 'center', marginTop: 6 }}>نسخة 1.8، متصلة بسيرفر Firebase حقيقي.</div>
+        </div>
         </div>
     </FileCard>;
 }

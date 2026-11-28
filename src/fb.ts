@@ -18,6 +18,8 @@ export type ProfileDoc = {
     photo?: string; idPhoto?: string; idPhotoBack?: string; email?: string; createdAt?: number;
 };
 
+export type ReviewEntry = { name: string; stars: number; text: string; tags: string[]; ownerStars?: number; ts: number };
+
 export type DeviceDoc = {
     id: string; kind: 'PS5' | 'PS4' | 'Xbox'; title: string;
     ownerId: string; ownerName: string;
@@ -29,6 +31,7 @@ export type DeviceDoc = {
     // ومبيقراهوش غير المالك والمندوب المكلف (قواعد الفايرستور).
     lat?: number; lng?: number;
     activeCourierId?: string;
+    reviewList?: ReviewEntry[];
     status: 'open' | 'rented'; createdAt: number;
 };
 
@@ -45,6 +48,7 @@ export type OrderDoc = {
     status: OrderStatus; createdMs: number; deliveredAt?: number;
     courierId?: string; courierName?: string;
     handoverCheck?: CondDoc | null; returnCheck?: CondDoc | null;
+    reviewed?: boolean;
 };
 
 export type ChatDoc = {
