@@ -509,7 +509,7 @@ function DetailStars({ rating, reviews }: { rating: number; reviews: number }) {
     </div>;
 }
 
-function ConsoleDetailPage({ listing, busy, onRequest, onChat }: { listing: ConsoleListing | null; busy: Set<number>; onRequest: () => void; onChat: (name: string) => void }) {
+function ConsoleDetailPage({ listing, busy, myUid, onRequest, onChat }: { listing: ConsoleListing | null; busy: Set<number>; myUid: string; onRequest: () => void; onChat: (name: string) => void }) {
     if (!listing) return <div className="nd-page">
         <div className="nd-topbar"><Link className="nd-back" to="/" aria-label="رجوع"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7"/></svg></Link><b>تفاصيل الجهاز</b><span style={{ width: 38 }} /></div>
         <div className="nd-card" style={{ margin: '18px 22px' }}><div className="nd-note" style={{ marginBottom: 10 }}>مفيش جهاز متختار. ارجع للإعلانات ودوس على أي جهاز عشان تشوف تفاصيله.</div><Link className="nd-linklike" to="/">شوف الإعلانات</Link></div>
@@ -548,7 +548,9 @@ function ConsoleDetailPage({ listing, busy, onRequest, onChat }: { listing: Cons
             <div className="nd-note" style={{ marginTop: 12 }}>كل جهاز فيه جهاز تتبع ضد السرقة، وهتشوف ده وتوافق عليه قبل ما تأكد الطلب.</div>
         </div>
         <div className="nd-bottombar">
-            <Link className="nd-btn" style={{ flex: 1, textAlign: 'center', textDecoration: 'none' }} to="/request" onClick={onRequest}>اطلب الجهاز</Link>
+            {listing.ownerId === myUid
+                ? <div className="nd-note" style={{ flex: 1, textAlign: 'center', alignSelf: 'center', fontWeight: 700 }}>ده إعلانك أنت — مينفعش تطلب جهازك. تقدر تعدله أو تمسحه من صفحة حسابك.</div>
+                : <Link className="nd-btn" style={{ flex: 1, textAlign: 'center', textDecoration: 'none' }} to="/request" onClick={onRequest}>اطلب الجهاز</Link>}
             <button type="button" className="nd-btn2" style={{ width: 52, borderRadius: 16, flex: 'none' }} onClick={() => onChat(listing.owner)} aria-label={`كلم ${listing.owner}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="21" height="21"><path d="M4 4h16v12H9l-5 4z"/></svg></button>
         </div>
     </div>;
@@ -1890,6 +1892,7 @@ export function App() {
     const courierFeed = orders.filter(o => o.status === 'accepted' || (o.courierId === uid && [...ORDER_BUSY, 'returning' as OrderStatus].includes(o.status)));
     const exactLoc = useExactLocations(devList, uid);
 
+    const openDetail = (l: ConsoleListing) => { setDetail(l); window.location.hash = '/detail'; };
     const requestConsole = (l: ConsoleListing) => {
         setRequestTarget({ title: l.title, owner: l.owner, ownerLine: `${l.owner} · ${areaName(l.area)}، ${l.district}`, pricePerDay: l.pricePerDay, deposit: l.deposit, number: l.number, deviceId: l.id, ownerId: l.ownerId, kind: l.kind, photoKey: l.photoKey, photoData: l.photoData });
     };
@@ -1949,6 +1952,7 @@ export function App() {
     };
     const confirmRequest = (r: { days: number; rent: number; deposit: number; fromMs: number; deliveryFee: number; promo: string; discount: number; payMethod: string }) => {
         if (!requestTarget || !user || !profile || !requestTarget.deviceId || !requestTarget.ownerId) return;
+        if (requestTarget.ownerId === uid) { setErrNote('مينفعش تطلب جهازك أنت. ده إعلانك.'); return; }
         run(fbCreateOrder({
             deviceId: requestTarget.deviceId, listingNumber: requestTarget.number, title: requestTarget.title,
             ownerId: requestTarget.ownerId, ownerName: requestTarget.owner,
@@ -2010,8 +2014,8 @@ export function App() {
         <div onPointerDown={lpStart} onPointerUp={lpCancel} onPointerMove={lpCancel} onPointerLeave={lpCancel} onPointerCancel={lpCancel}
             onContextMenu={e => { if ((e.target as HTMLElement).closest('.nd-name')) e.preventDefault(); }}>
         <Routes>
-            <Route path="/" element={<Home consoles={consoles} profile={profile} onOpenConsole={setDetail} />} />
-            <Route path="/map" element={<MapPage consoles={consoles} onOpen={setDetail} exactLoc={exactLoc} />} />
+            <Route path="/" element={<Home consoles={consoles} profile={profile} onOpenConsole={openDetail} />} />
+            <Route path="/map" element={<MapPage consoles={consoles} onOpen={openDetail} exactLoc={exactLoc} />} />
             <Route path="/orders" element={<OrdersPage myOrders={myOrders} consoles={consoles} onTrack={setTracking} onCancelRequest={(id) => run(fbDeleteOrder(id), 'الطلب ماتلغاش. جرب تاني.')} onOpenOrder={() => { window.location.hash = '/order'; }} onRate={(o) => { setReviewTarget(o); window.location.hash = '/review'; }} />} />
             <Route path="/add" element={<AddPage onAdd={addListing} blocked={!!rentalOrder} profile={profile} />} />
             <Route path="/admin" element={adminRole === 'courier'
@@ -2024,7 +2028,7 @@ export function App() {
                         onDeleteUser={(id) => run(fbDeleteUser(id), 'ماتمسحش. جرب تاني.')}
                         onExit={() => { setAdminRole(null); window.location.hash = '/'; }} />
                     : <Group label="الصفحة دي مش موجودة" heading="اتوجهت غلط"><Callout title="مفيش حاجة هنا" tone="note">الصفحة دي مش متاحة. ارجع للإعلانات.</Callout><Link className="file-button is-compact" data-variant="secondary" to="/">ارجع للإعلانات</Link></Group>} />
-            <Route path="/detail" element={<ConsoleDetailPage listing={detail} busy={busyDaysFor(detail, orders)} onRequest={() => detail && requestConsole(detail)} onChat={() => detail && openDmFor(detail)} />} />
+            <Route path="/detail" element={<ConsoleDetailPage listing={detail} busy={busyDaysFor(detail, orders)} myUid={uid} onRequest={() => detail && requestConsole(detail)} onChat={() => detail && openDmFor(detail)} />} />
             <Route path="/order" element={<OrderPage order={currentOrder} onHandoverCheck={(v) => currentOrder && run(fbUpdateOrder(currentOrder.id, { handoverCheck: v }), 'ماتحفظتش. جرب تاني.')} onChat={handleChat} />} />
             <Route path="/review" element={<ReviewPage order={reviewTarget} consoles={realListings} onSubmit={submitReview} />} />
             <Route path="/request" element={<RequestPage target={requestTarget} hasOpenRequest={myOrders.some(o => o.status === 'requested')} busy={busyForTarget} onConfirm={confirmRequest} />} />
