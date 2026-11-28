@@ -22,9 +22,13 @@ function hexToRgba(hex: string, alpha: number): string {
 (function applyTheme() {
   const t: any = theme || {};
   const root = document.documentElement;
-  if (t.اللون_الأساسي) root.style.setProperty('--ds-teal', t.اللون_الأساسي);
-  if (t.لون_الخلفية) root.style.setProperty('--ds-page', t.لون_الخلفية);
-  if (t.لون_الكتابة) root.style.setProperty('--ds-ink', t.لون_الكتابة);
+  // الوضع المحفوظ (داكن/فاتح) بيتطبق قبل أول رسمة عشان مفيش فلاش ألوان
+  let savedMode = 'dark';
+  try { savedMode = localStorage.getItem('nexus-theme') === 'light' ? 'light' : 'dark'; } catch { /* خاص */ }
+  if (savedMode === 'light') root.dataset.theme = 'light';
+  if (savedMode !== 'light' && t.اللون_الأساسي) root.style.setProperty('--ds-teal', t.اللون_الأساسي);
+  if (savedMode !== 'light' && t.لون_الخلفية) root.style.setProperty('--ds-page', t.لون_الخلفية);
+  if (savedMode !== 'light' && t.لون_الكتابة) root.style.setProperty('--ds-ink', t.لون_الكتابة);
 
   const extra: string[] = [];
   const accent: string | undefined = t.اللون_الأساسي;
@@ -36,7 +40,7 @@ function hexToRgba(hex: string, alpha: number): string {
     extra.push(`.nexus-menu-btn{color:${a};box-shadow:0 0 12px ${g(0.25)}}`);
     extra.push(`.nexus-menu-btn:focus-visible{outline-color:${a}}`);
     extra.push(`.nexus-badge{border-color:${g(0.55)};color:${a};background:${g(0.1)};box-shadow:0 0 12px ${g(0.25)}}`);
-    extra.push(`.nexus-progress>div{background:linear-gradient(90deg,#8b5cff,${a});box-shadow:0 0 12px ${g(0.5)}}`);
+    extra.push(`.nexus-progress>div{background:linear-gradient(90deg,#C724B1,${a});box-shadow:0 0 12px ${g(0.5)}}`);
     extra.push(`.nexus-ring{filter:drop-shadow(0 0 12px ${g(0.35)})}`);
     extra.push(`.nexus-ring-label{color:${a};text-shadow:0 0 14px ${g(0.6)}}`);
     extra.push(`.nexus-check input{accent-color:${a}}`);

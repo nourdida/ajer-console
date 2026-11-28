@@ -1,5 +1,5 @@
-/* NEXUS service worker - v1.5 */
-const CACHE = 'nexus-v1.5';
+/* NEXUS service worker - v1.7 */
+const CACHE = 'nexus-v1.7';
 self.addEventListener('install', (e) => { self.skipWaiting(); });
 self.addEventListener('activate', (e) => {
   e.waitUntil(

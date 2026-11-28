@@ -7,6 +7,7 @@ import {
     authErrorAr, dmChannelId, orderChannelId, ORDER_BUSY,
     type DeviceDoc, type OrderDoc, type OrderStatus, type ChatDoc, type ProfileDoc, type AdminUserDoc, type ComplaintDoc,
 } from './fb';
+import themeConfig from '../theme.js';
 import 'leaflet/dist/leaflet.css';
 import {
     Callout, Caption, ChoiceRow, CloseButton, Closing, Facts, FileButton, FileCard, Group, Header,
@@ -34,7 +35,7 @@ type ConsoleListing = {
 type Request = { id: string; listingNumber: number; title: string; owner: string; days: number; rent: number; deposit: number; fromMs?: number; deliveryFee?: number; promo?: string; discount?: number; payMethod?: string };
 type BookingRange = { listingNumber: number; fromMs: number; days: number };
 type CondState = { checks: boolean[]; photos: string[] };
-type UserProfile = { name: string; age: string; phone: string; avatar: string; address: string; photo?: string; idPhoto?: string };
+type UserProfile = { name: string; age: string; phone: string; avatar: string; address: string; photo?: string; idPhoto?: string; idPhotoBack?: string };
 type ChatMsg = { me: boolean; text: string };
 type Complaint = { id: string; from: string; subject: string; detail: string; status: string; date: string };
 type AdminUser = { id: string; name: string; phone: string; area: string; age: string; joined: string; status: string; listings: number; rentals: number };
@@ -188,7 +189,7 @@ function statusAr(s: OrderStatus): string {
 const STAGE_OF: Record<string, number> = { accepted: 0, taken: 0, pickedup: 2, arrived: 3, delivered: 3 };
 function areaName(a: string) { return a === 'زايد' ? 'الشيخ زايد' : '6 أكتوبر'; }
 
-const GAME_COLORS = ['#ff2ec4', '#2ee6d6', '#ffd54d', '#8b5cff', '#4dc3ff', '#7dff9a'];
+const GAME_COLORS = ['#ff2ec4', '#FF7EE3', '#ffd54d', '#C724B1', '#4dc3ff', '#7dff9a'];
 function gameChipStyle(i: number): React.CSSProperties {
     const c = GAME_COLORS[i % GAME_COLORS.length];
     return { borderColor: c, color: c, background: `${c}1f` };
@@ -275,7 +276,7 @@ function TrackingMap({ lat, lng, title, exact }: { lat: number; lng: number; tit
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         }).addTo(map);
         if (!exact) {
-            L.circle([lat, lng], { radius: 380, color: '#8b5cff', weight: 1, dashArray: '6 6', fillColor: '#8b5cff', fillOpacity: 0.06 }).addTo(map);
+            L.circle([lat, lng], { radius: 380, color: '#C724B1', weight: 1, dashArray: '6 6', fillColor: '#C724B1', fillOpacity: 0.06 }).addTo(map);
         }
         const icon = L.divIcon({ className: 'nexus-pin is-selected', html: `<span>${exact ? 'دقيق' : 'هنا'}</span>`, iconSize: [34, 34], iconAnchor: [17, 17] });
         L.marker([lat, lng], { icon }).addTo(map);
@@ -486,8 +487,10 @@ function ConsoleDetailPage({ listing, busy, onRequest, onChat }: { listing: Cons
     </Group>;
 }
 
-type IconName = 'grid' | 'map' | 'package' | 'plus' | 'list' | 'user' | 'headset' | 'help' | 'shield';
+type IconName = 'grid' | 'map' | 'package' | 'plus' | 'list' | 'user' | 'headset' | 'help' | 'shield' | 'sun' | 'moon';
 const ICON_PATHS: Record<IconName, React.ReactNode> = {
+    sun: <><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5 5l1.7 1.7M17.3 17.3 19 19M19 5l-1.7 1.7M6.7 17.3 5 19" /></>,
+    moon: <path d="M20 13.2A8.1 8.1 0 1 1 10.8 4a6.6 6.6 0 0 0 9.2 9.2z" />,
     grid: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
     map: <><path d="M12 21s-7-5.1-7-11a7 7 0 0 1 14 0c0 5.9-7 11-7 11z" /><circle cx="12" cy="10" r="2.6" /></>,
     package: <><path d="M21 8.5v7a2 2 0 0 1-1 1.73l-6 3.5a2 2 0 0 1-2 0l-6-3.5A2 2 0 0 1 5 15.5v-7a2 2 0 0 1 1-1.73l6-3.5a2 2 0 0 1 2 0l6 3.5a2 2 0 0 1 1 1.73z" /><path d="M5.3 7.3 12 11.2l6.7-3.9" /><path d="M12 11.2V21" /></>,
@@ -557,7 +560,7 @@ function MapPage({ consoles, onRequest, exactLoc }: { consoles: ConsoleListing[]
         consoles.forEach((l) => {
             const { pos, exact } = posFor(l);
             if (!exact && typeof l.lat === 'number') {
-                L.circle(pos, { radius: 380, color: '#8b5cff', weight: 1, dashArray: '6 6', fillColor: '#8b5cff', fillOpacity: 0.06 }).addTo(group);
+                L.circle(pos, { radius: 380, color: '#C724B1', weight: 1, dashArray: '6 6', fillColor: '#C724B1', fillOpacity: 0.06 }).addTo(group);
             }
             const icon = L.divIcon({
                 className: selected === l.number ? 'nexus-pin is-selected' : 'nexus-pin',
@@ -588,13 +591,13 @@ function MapPage({ consoles, onRequest, exactLoc }: { consoles: ConsoleListing[]
                     meAccRef.current?.remove();
                     meAccRef.current = L.circle([p.coords.latitude, p.coords.longitude], {
                         radius: p.coords.accuracy || 60,
-                        color: '#2ee6d6', weight: 1, fillColor: '#2ee6d6', fillOpacity: 0.12,
+                        color: '#FF7EE3', weight: 1, fillColor: '#FF7EE3', fillOpacity: 0.12,
                     }).addTo(map);
                     meRef.current = L.circleMarker([p.coords.latitude, p.coords.longitude], {
                         radius: 9,
-                        color: '#2ee6d6',
+                        color: '#FF7EE3',
                         weight: 3,
-                        fillColor: '#2ee6d6',
+                        fillColor: '#FF7EE3',
                         fillOpacity: 0.35,
                     }).addTo(map);
                     map.setView([p.coords.latitude, p.coords.longitude], 14);
@@ -861,11 +864,11 @@ function CountdownRing({ frac, label, sub }: { frac: number; label: string; sub:
         <svg className="nexus-ring" viewBox="0 0 160 160" role="img" aria-label={`فاضل ${label}`}>
             <defs>
                 <linearGradient id="nexusGrad" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor="#8b5cff" />
-                    <stop offset="100%" stopColor="#2ee6d6" />
+                    <stop offset="0%" stopColor="#C724B1" />
+                    <stop offset="100%" stopColor="#FF7EE3" />
                 </linearGradient>
             </defs>
-            <circle cx="80" cy="80" r={R} fill="none" stroke="#1a1a33" strokeWidth="10" />
+            <circle cx="80" cy="80" r={R} fill="none" stroke="#1a1545" strokeWidth="10" />
             <circle cx="80" cy="80" r={R} fill="none" stroke="url(#nexusGrad)" strokeWidth="10" strokeLinecap="round"
                 strokeDasharray={C} strokeDashoffset={C * (1 - frac)} transform="rotate(-90 80 80)" />
         </svg>
@@ -976,11 +979,17 @@ function ProfileForm({ initial, submitLabel, onSave }: { initial: UserProfile | 
     const [address, setAddress] = useState(initial?.address || '');
     const [photo, setPhoto] = useState(initial?.photo || '');
     const [idPhoto, setIdPhoto] = useState(initial?.idPhoto || '');
+    const [idPhotoBack, setIdPhotoBack] = useState(initial?.idPhotoBack || '');
     const [error, setError] = useState('');
     const pickIdPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
         const f = e.target.files && e.target.files[0];
         if (!f) return;
         fileToSmallDataUrl(f, 480, setIdPhoto);
+    };
+    const pickIdPhotoBack = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        fileToSmallDataUrl(f, 480, setIdPhotoBack);
     };
     const pickProfilePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
         const f = e.target.files && e.target.files[0];
@@ -994,9 +1003,9 @@ function ProfileForm({ initial, submitLabel, onSave }: { initial: UserProfile | 
         if (phone.replace(/\D/g, '').length < 10) { setError('اكتب رقم موبايل صحيح من 11 رقم.'); return; }
         if (address.trim().length < 3) { setError('اكتب عنوانك (المنطقة والحي).' ); return; }
         if (!photo) { setError('ضيف صورتك الشخصية الأول، مطلوبة للأمان.'); return; }
-        if (!idPhoto) { setError('ضيف صورة البطاقة كمان، مطلوبة للأمان.'); return; }
+        if (!idPhoto || !idPhotoBack) { setError('ضيف صورة البطاقة وش وضهر، الاتنين مطلوبين للأمان.'); return; }
         setError('');
-        onSave({ name: name.trim(), age: String(a), phone: phone.trim(), avatar: initial?.avatar || AVATARS[0], address: address.trim(), photo, idPhoto });
+        onSave({ name: name.trim(), age: String(a), phone: phone.trim(), avatar: initial?.avatar || AVATARS[0], address: address.trim(), photo, idPhoto, idPhotoBack });
     };
     return <>
         <div className="nexus-idphoto">
@@ -1013,14 +1022,23 @@ function ProfileForm({ initial, submitLabel, onSave }: { initial: UserProfile | 
         <TextField label="رقم موبايلك" value={phone} onChange={(v: string) => setPhone(v)} />
         <TextField label="عنوانك (المنطقة والحي)" value={address} onChange={(v: string) => setAddress(v)} />
         <div className="nexus-idphoto">
-            <span className="nexus-idphoto-label">صورة البطاقة (إثبات شخصية)</span>
-            <label className="nexus-idphoto-drop">
-              {idPhoto ? "غيّر صورة البطاقة" : "ارفع صورة البطاقة من موبايلك"}
-              <input type="file" accept="image/*" onChange={pickIdPhoto} aria-label="ارفع صورة البطاقة" style={{ display: "none" }} />
-            </label>
-            {idPhoto ? <img className="nexus-idphoto-preview" src={idPhoto} alt="صورة البطاقة اللي رفعتها" /> : null}
+            <span className="nexus-idphoto-label">صورة البطاقة وش وضهر (إثبات شخصية)</span>
+            <div className="nexus-idpair">
+              <label className="nexus-idphoto-drop">
+                {idPhoto ? "غيّر صورة الوش" : "ارفع صورة الوش"}
+                <input type="file" accept="image/*" onChange={pickIdPhoto} aria-label="ارفع صورة وش البطاقة" style={{ display: "none" }} />
+              </label>
+              <label className="nexus-idphoto-drop">
+                {idPhotoBack ? "غيّر صورة الضهر" : "ارفع صورة الضهر"}
+                <input type="file" accept="image/*" onChange={pickIdPhotoBack} aria-label="ارفع صورة ضهر البطاقة" style={{ display: "none" }} />
+              </label>
+            </div>
+            <div className="nexus-idpair">
+              {idPhoto ? <img className="nexus-idphoto-preview" src={idPhoto} alt="صورة وش البطاقة اللي رفعتها" /> : <span />}
+              {idPhotoBack ? <img className="nexus-idphoto-preview" src={idPhotoBack} alt="صورة ضهر البطاقة اللي رفعتها" /> : <span />}
+            </div>
         </div>
-        <Caption>صورة البطاقة مطلوبة عشان الأمان، ومبيشوفهاش أي مستخدم خالص - إدارة التطبيق بس اللي بتشوفها.</Caption>
+        <Caption>صور البطاقة مطلوبة للأمان، ومبيشوفهاش أي مستخدم خالص - إدارة التطبيق بس اللي بتشوفها. بتتخزن على سيرفرات Firebase وجوجل بتشفرها أثناء النقل والتخزين.</Caption>
         {error && <Callout title="راجع البيانات" tone="danger">{error}</Callout>}
         <FileButton variant="primary" pill onClick={save}>{submitLabel}</FileButton>
         <Caption>بياناتك بتتحفظ على سيرفر Firebase بأمان. صورتك وصورة بطاقتك مبيشوفهمش أي مستخدم، إدارة التطبيق بس.</Caption>
@@ -1341,8 +1359,12 @@ function AdminPage({ users, complaints, orders, devices, onCloseComplaint, onDel
                         {selected.photo ? <img className="nexus-idphoto-full" src={selected.photo} alt="الصورة الشخصية للمستخدم" /> : <div className="nexus-idphoto-empty">لسه ما رفعش صورة شخصية</div>}
                     </div>
                     <div>
-                        <div className="nexus-idphoto-label">صورة البطاقة</div>
-                        {selected.idPhoto ? <img className="nexus-idphoto-full" src={selected.idPhoto} alt="صورة بطاقة المستخدم" /> : <div className="nexus-idphoto-empty">لسه ما رفعش صورة بطاقة</div>}
+                        <div className="nexus-idphoto-label">البطاقة (الوش)</div>
+                        {selected.idPhoto ? <img className="nexus-idphoto-full" src={selected.idPhoto} alt="صورة وش بطاقة المستخدم" /> : <div className="nexus-idphoto-empty">لسه ما رفعش الوش</div>}
+                    </div>
+                    <div>
+                        <div className="nexus-idphoto-label">البطاقة (الضهر)</div>
+                        {selected.idPhotoBack ? <img className="nexus-idphoto-full" src={selected.idPhotoBack} alt="صورة ضهر بطاقة المستخدم" /> : <div className="nexus-idphoto-empty">لسه ما رفعش الضهر</div>}
                     </div>
                 </div>
                 <Caption>قارن الصورتين عشان تتأكد إن صاحب الحساب هو صاحب البطاقة. الصور دي بتظهر في لوحة الإدارة بس.</Caption>
@@ -1401,7 +1423,7 @@ function AuthPage() {
         setBusy(false);
     };
     return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-        <Header title="NEXUS" fact="نسخة 1.6.1" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، والمندوب يوصله لحد بابك." />
+        <Header title="NEXUS" fact="نسخة 1.7" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، والمندوب يوصله لحد بابك." />
         <Group label={mode === 'signup' ? 'حساب جديد' : 'تسجيل دخول'} heading={mode === 'signup' ? 'اعمل حسابك في دقيقة' : 'أهلًا برجوعك'}>
             <span className="nexus-idphoto-label">الإيميل</span>
             <input className="nexus-chat-input" dir="ltr" type="email" autoComplete="email" value={email} onChange={e => { setEmail(e.target.value); setErr(''); }} placeholder="name@gmail.com" aria-label="الإيميل" />
@@ -1445,6 +1467,25 @@ export function App() {
 
     const run = (p: Promise<any>, msg: string) => p.catch((e) => { console.warn(e); setErrNote(msg); });
 
+    const [themeMode, setThemeMode] = useState<'dark' | 'light'>(() => (typeof localStorage !== 'undefined' && localStorage.getItem('nexus-theme') === 'light') ? 'light' : 'dark');
+    useEffect(() => {
+        const root = document.documentElement;
+        const t: any = themeConfig || {};
+        if (themeMode === 'light') {
+            root.dataset.theme = 'light';
+            root.style.removeProperty('--ds-teal');
+            root.style.removeProperty('--ds-page');
+            root.style.removeProperty('--ds-ink');
+        } else {
+            delete root.dataset.theme;
+            if (t.اللون_الأساسي) root.style.setProperty('--ds-teal', t.اللون_الأساسي);
+            if (t.لون_الخلفية) root.style.setProperty('--ds-page', t.لون_الخلفية);
+            if (t.لون_الكتابة) root.style.setProperty('--ds-ink', t.لون_الكتابة);
+        }
+        try { localStorage.setItem('nexus-theme', themeMode); } catch { /* خاص */ }
+        document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeMode === 'light' ? '#f4f1fa' : '#0b0920');
+    }, [themeMode]);
+
     useEffect(() => {
         if (!SHOT) return;
         const q = new URLSearchParams(window.location.search);
@@ -1485,7 +1526,7 @@ export function App() {
 
     const uid = user ? user.uid : '';
     const orders = ordersAll || [];
-    const profile: UserProfile | null = profileDoc ? { name: profileDoc.name, age: profileDoc.age, phone: profileDoc.phone, avatar: profileDoc.avatar, address: profileDoc.address, photo: profileDoc.photo, idPhoto: profileDoc.idPhoto } : null;
+    const profile: UserProfile | null = profileDoc ? { name: profileDoc.name, age: profileDoc.age, phone: profileDoc.phone, avatar: profileDoc.avatar, address: profileDoc.address, photo: profileDoc.photo, idPhoto: profileDoc.idPhoto, idPhotoBack: profileDoc.idPhotoBack } : null;
     const devList = devices || [];
     const realListings: ConsoleListing[] = devList.map((d, i) => ({
         id: d.id, number: 100 + (devList.length - i), kind: d.kind, title: d.title, owner: d.ownerName, ownerId: d.ownerId,
@@ -1600,7 +1641,7 @@ export function App() {
 
     if (user === undefined || (user && profileDoc === undefined) || devices === undefined || ordersAll === undefined) {
         return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-            <Header title="NEXUS" fact="نسخة 1.6.1" intro="ثواني وبنجهز حسابك من السيرفر..." />
+            <Header title="NEXUS" fact="نسخة 1.7" intro="ثواني وبنجهز حسابك من السيرفر..." />
         </div></FileCard>;
     }
     if (!user) return <> <AuthPage /> {SHOT && tracking && (() => {
@@ -1610,7 +1651,7 @@ export function App() {
     })()} </>;
     if (!profile) {
         return <FileCard lang="ar" dir="rtl"><div className="nexus-app">
-            <Header title="NEXUS" fact="نسخة 1.6.1" intro="آخر خطوة: عرفنا بنفسك. بياناتك بتتحفظ على السيرفر بأمان، وصورتك وصورة بطاقتك للإدارة بس." />
+            <Header title="NEXUS" fact="نسخة 1.7" intro="آخر خطوة: عرفنا بنفسك. بياناتك بتتحفظ على السيرفر بأمان، وصورتك وصورة بطاقتك للإدارة بس." />
             <Group label="بياناتك" heading="معلوماتك الأساسية">
                 <ProfileForm initial={null} submitLabel="احفظ وابدأ" onSave={saveProfile} />
             </Group>
@@ -1620,10 +1661,11 @@ export function App() {
         <div className="nexus-app">
         <div className="nexus-topbar">
             <button type="button" className="nexus-menu-btn" aria-label="افتح القائمة" onClick={() => setMenuOpen(true)}>⋮</button>
+            <button type="button" className="nexus-menu-btn nexus-theme-btn" aria-label={themeMode === 'dark' ? 'حوّل للوضع الفاتح' : 'حوّل للوضع الداكن'} title={themeMode === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'} onClick={() => setThemeMode(themeMode === 'dark' ? 'light' : 'dark')}><Icon name={themeMode === 'dark' ? 'sun' : 'moon'} size={20} /></button>
         </div>
         <div onPointerDown={lpStart} onPointerUp={lpCancel} onPointerMove={lpCancel} onPointerLeave={lpCancel} onPointerCancel={lpCancel}
             onContextMenu={e => { if ((e.target as HTMLElement).closest('.file-title')) e.preventDefault(); }}>
-            <Header title="NEXUS" fact="نسخة 1.6.1" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، كلم صاحبها، وادفع كاش عند الاستلام." />
+            <Header title="NEXUS" fact="نسخة 1.7" intro="وسيط بين اللي عنده بلايستيشن أو إكس بوكس واللي عايز يلعب: اختار أقرب جهاز، كلم صاحبها، وادفع كاش عند الاستلام." />
         </div>
         <Callout title="متصل بسيرفر حقيقي" tone="note">الإعلانات والطلبات والشات حقيقية وبتتحفظ على السيرفر لحظة بلحظة، والدفع كاش عند الاستلام مع المندوب.</Callout>
         <Drawer open={menuOpen} profile={profile} myCount={myListings.length} email={user.email || ''} onClose={() => setMenuOpen(false)} onGuide={() => setGuideOpen(true)} onSupport={openSupport} onSignOut={() => { fbSignOut().catch(() => {}); }} />
@@ -1679,7 +1721,7 @@ export function App() {
         </div>}
         {errNote && <Callout title="حصلت مشكلة" tone="danger">{errNote}</Callout>}
         <Caption>صور الأجهزة: بلايستيشن 5 بواسطة Soberian وبلايستيشن 4 بواسطة Evan-Amos ودراع بلايستيشن بواسطة Viper polo وإكس بوكس سيريس إكس بواسطة epredator ودراع إكس بوكس بواسطة UKER، عبر ويكيميديا كومنز. أغلفة الألعاب رسوم توضيحية.</Caption>
-        <Closing>نسخة 1.6.1، متصلة بسيرفر Firebase حقيقي.</Closing>
+        <Closing>نسخة 1.7، متصلة بسيرفر Firebase حقيقي.</Closing>
         </div>
     </FileCard>;
 }

@@ -15,7 +15,7 @@ export type CondDoc = { checks: boolean[]; photos: string[] };
 
 export type ProfileDoc = {
     name: string; age: string; phone: string; avatar: string; address: string;
-    photo?: string; idPhoto?: string; email?: string; createdAt?: number;
+    photo?: string; idPhoto?: string; idPhotoBack?: string; email?: string; createdAt?: number;
 };
 
 export type DeviceDoc = {
