@@ -121,10 +121,14 @@ export async function fbSaveProfile(uid: string, p: ProfileDoc) {
 // ---------- إعلانات الأجهزة ----------
 
 export function useDevices(): DeviceDoc[] | undefined {
+    const user = useAuthUser();
     const [list, setList] = useState<DeviceDoc[] | undefined>(undefined);
-    useEffect(() => onSnapshot(query(collection(db, 'devices'), orderBy('createdAt', 'desc')),
-        (s) => setList(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<DeviceDoc, 'id'>) }))),
-        (err) => { console.warn('devices', err); setList([]); }), []);
+    useEffect(() => {
+        if (!user) { setList(undefined); return; }
+        return onSnapshot(query(collection(db, 'devices'), orderBy('createdAt', 'desc')),
+            (s) => setList(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<DeviceDoc, 'id'>) }))),
+            (err) => { console.warn('devices', err); setList([]); });
+    }, [user]);
     return list;
 }
 
@@ -168,10 +172,14 @@ export async function fbDeleteDevice(id: string) {
 // ---------- الطلبات ----------
 
 export function useOrders(): OrderDoc[] | undefined {
+    const user = useAuthUser();
     const [list, setList] = useState<OrderDoc[] | undefined>(undefined);
-    useEffect(() => onSnapshot(query(collection(db, 'orders'), orderBy('createdMs', 'desc')),
-        (s) => setList(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OrderDoc, 'id'>) }))),
-        (err) => { console.warn('orders', err); setList([]); }), []);
+    useEffect(() => {
+        if (!user) { setList(undefined); return; }
+        return onSnapshot(query(collection(db, 'orders'), orderBy('createdMs', 'desc')),
+            (s) => setList(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OrderDoc, 'id'>) }))),
+            (err) => { console.warn('orders', err); setList([]); });
+    }, [user]);
     return list;
 }
 
